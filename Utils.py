@@ -823,7 +823,7 @@ def ideal_0DTE_contract(ticker, sentiment, expected_move):
     # Return the first (most suitable) option's ticker
     return sorted_options['Symbol'].iloc[0]
 
-
+# TODO Zero DTE Gambler
 def zero_dte_options(ticker):
     #sentiment = decide_trade(ticker)
     sentiment = 'call'
@@ -835,7 +835,43 @@ def zero_dte_options(ticker):
         return ideal_0DTE_contract(ticker, sentiment, expected_price)
     else:
         return "Neutral"
+
+# TODO Zero DTE Casino
+def setup_iron_condor(ticker, dividend_yield=0, risk_free_rate=None, distance=1, width=5):
+    # Get the current price of the underlying asset
+    underlying_price = get_underlying_price(ticker)
     
+    # Get option chains for calls and puts
+    calls = yo.get_chain_greeks(stock_ticker=ticker, dividend_yield=dividend_yield, option_type='c', risk_free_rate=risk_free_rate)
+    puts = yo.get_chain_greeks(stock_ticker=ticker, dividend_yield=dividend_yield, option_type='p', risk_free_rate=risk_free_rate)
+    
+    # Filter out-of-the-money options based on underlying price
+    otm_calls = calls[calls['Strike'] > underlying_price]
+    otm_puts = puts[puts['Strike'] < underlying_price]
+    
+    # Select the call and put options to sell (closest to the money but still OTM)
+    sell_call = otm_calls.iloc[distance - 1]
+    sell_put = otm_puts.iloc[distance - 1]
+    
+    # Select the call and put options to buy (further out-of-the-money)
+    buy_call = otm_calls.iloc[distance - 1 + width]
+    buy_put = otm_puts.iloc[distance - 1 - width]
+    
+    # Calculate net premium received
+    net_premium = (sell_call['Bid'] + sell_put['Bid'] - buy_call['Ask'] - buy_put['Ask'])
+    
+    # Calculate max potential loss (Width of the strikes minus net premium received)
+    max_loss = width - net_premium
+    
+    return {
+        "Sell Call": sell_call['Symbol'],
+        "Buy Call": buy_call['Symbol'],
+        "Sell Put": sell_put['Symbol'],
+        "Buy Put": buy_put['Symbol'],
+        "Net Premium": net_premium,
+        "Max Loss": max_loss
+    }
+
 if __name__ == '__main__':    
     '''
     print("Expiry of contract BA231027C00200000:", get_expiry('BA231027C00200000'))
@@ -910,4 +946,5 @@ if __name__ == '__main__':
     
     print("Combined Forecast for SPY:", combined_forecast('SPY'))
     '''
-    print(zero_dte_options('SPY'))
+    # print(zero_dte_options('SPY'))
+    # print(setup_iron_condor('SPY'))

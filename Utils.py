@@ -9,6 +9,7 @@ import pandas as pd
 from scipy.stats import norm
 import yfinance as yf
 import yoptions as yo
+from sklearn.linear_model import LinearRegression
 
 # Constants
 ANNUAL_TRADING_DAYS = 252
@@ -78,6 +79,164 @@ def get_expiry(contract_name):
 def get_historical_data(contract_name):
     return yo.get_historical_option_ticker(option_ticker = contract_name)
 
+def get_data(ticker, period='1y'):
+    """
+    Download historical data for the given ticker using yfinance.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    period (str): Duration for which data needs to be fetched. Default is '1y' for one year.
+
+    Returns:
+    DataFrame: Historical data.
+    """
+    data = yf.download(ticker, period=period)
+    return data
+
+def exponential_moving_average(ticker, n=50, period='5m'):
+    """
+    Calculate exponential moving average.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    n (int): Number of days over which to calculate EMA.
+    period (str): Time frame for the EMA. Default is '5m' for 5 minutes.
+
+    Returns:
+    Series: EMA values.
+    """
+    data = get_data(ticker, period)
+    ema = data['Close'].ewm(span=n, adjust=False).mean()
+    return ema
+
+def price_rate_of_change(ticker, n=14):
+    """
+    Calculate Price Rate of Change.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    n (int): Number of days over which to calculate ROC.
+
+    Returns:
+    Series: ROC values.
+    """
+    data = get_data(ticker)
+    roc = ((data['Close'] - data['Close'].shift(n)) / data['Close'].shift(n)) * 100
+    return roc
+
+def moving_average(ticker, n=50):
+    """
+    Calculate simple moving average.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    n (int): Number of days over which to calculate SMA.
+
+    Returns:
+    Series: SMA values.
+    """
+    data = get_data(ticker)
+    sma = data['Close'].rolling(window=n).mean()
+    return sma
+
+def vwap(ticker):
+    """
+    Calculate Volume Weighted Average Price (VWAP).
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+
+    Returns:
+    Series: VWAP values.
+    """
+    data = get_data(ticker)
+    vwap = (data['Close'] * data['Volume']).cumsum() / data['Volume'].cumsum()
+    return vwap
+
+def simple_moving_forecast(ticker, n=3):
+    """
+    Predict the next period's closing price using Simple Moving Average.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    n (int): Number of periods to consider for SMA.
+
+    Returns:
+    float: Predicted closing price for the next period.
+    """
+    sma = moving_average(ticker, n)
+    return sma.iloc[-1]
+
+def linear_regression_forecast(ticker, n=10):
+    """
+    Predict the next period's closing price using Linear Regression.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    n (int): Number of periods to consider for Linear Regression.
+
+    Returns:
+    float: Predicted closing price for the next period.
+    """
+    data = get_data(ticker, period='5d')
+
+    last_n_days = data.iloc[-n:]
+
+    # Preparing data for Linear Regression
+    X = np.array(range(len(last_n_days))).reshape(-1, 1)
+    y = last_n_days['Close'].values
+
+    # Training the model
+    model = LinearRegression().fit(X, y)
+
+    # Predicting next period's closing price
+    next_period = np.array([n]).reshape(-1, 1)
+    predicted_close = model.predict(next_period)[0]
+    
+    return predicted_close
+
+def relative_strength_index(ticker, n=14):
+    """
+    Calculate Relative Strength Index (RSI).
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    n (int): Number of days over which to calculate RSI.
+
+    Returns:
+    Series: RSI values.
+    """
+    data = get_data(ticker)
+    delta = data['Close'].diff(1)
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    
+    avg_gain = gain.rolling(window=n, min_periods=1).mean()
+    avg_loss = loss.rolling(window=n, min_periods=1).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def bollinger_bands(ticker, n=20, std_dev=2):
+    """
+    Calculate Bollinger Bands.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    n (int): Number of days over which to calculate the moving average.
+    std_dev (int): Number of standard deviations to determine the upper and lower bands.
+
+    Returns:
+    DataFrame: Upper Band, SMA and Lower Band.
+    """
+    data = get_data(ticker)
+    sma = data['Close'].rolling(window=n).mean()
+    rolling_std = data['Close'].rolling(window=n).std()
+    upper_band = sma + (rolling_std * std_dev)
+    lower_band = sma - (rolling_std * std_dev)
+    return pd.DataFrame({'Upper Band': upper_band, 'SMA': sma, 'Lower Band': lower_band})
+
 def time_to_maturity(contract_name):
     expiry = get_expiry(contract_name)
     expiry_date = datetime.strptime(expiry, '%Y-%m-%d').date()
@@ -135,7 +294,6 @@ def ideal_contract_price(contract_name):
     # Calculate the Black-Scholes price
     price = black_scholes(S, K, T, r, sigma, option_type)
     return price
-
 
 def get_ideal_contract(ticker, expected_price, expected_date, days_after_target=7):
     """
@@ -244,7 +402,6 @@ def get_nearest_expiry_and_strike_filtered_options(ticker):
     
     return option_chain
 
-
 def under_valued_contracts(ticker):
     """
     Identify option contracts for a given ticker that are priced below their ideal Black-Scholes price.
@@ -279,7 +436,6 @@ def over_valued_contracts(ticker):
     
     return overvalued_options
 
-# TODO: Monte Carlo Simulation
 def monte_carlo_simulation(S, r, sigma, T, n_simulations, dt):
     """
     Simulate the stock price paths using Geometric Brownian Motion.
@@ -295,8 +451,22 @@ def monte_carlo_simulation(S, r, sigma, T, n_simulations, dt):
     Returns:
     ndarray: A 2D array where each column is a simulated stock price path.
     """
-    # TODO: Implement the simulation
-    pass
+    
+    # Number of time steps
+    n_steps = int(T/dt)
+    
+    # Initialize stock price paths matrix
+    paths = np.zeros((n_steps + 1, n_simulations))
+    paths[0] = S
+    
+    # Simulate paths
+    for t in range(1, n_steps + 1):
+        # Brownian motion increment
+        rand = np.random.randn(n_simulations)
+        # Update stock price using GBM formula
+        paths[t] = paths[t-1] * np.exp((r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * rand)
+    
+    return paths
 
 def monte_carlo_option_price(S, K, T, r, sigma, option_type='call', n_simulations=10000):
     """
@@ -309,10 +479,80 @@ def monte_carlo_option_price(S, K, T, r, sigma, option_type='call', n_simulation
     Returns:
     float: The estimated option price.
     """
-    # TODO: Use the monte_carlo_simulation function and average the results to get the option price.
-    pass
+    dt = T / 252  # Daily increment
+    paths = monte_carlo_simulation(S, r, sigma, T, n_simulations, dt)
+    if option_type.lower() in ['call', 'c']:
+        payoffs = np.maximum(paths[-1] - K, 0)
+    elif option_type.lower() in ['put', 'p']:
+        payoffs = np.maximum(K - paths[-1], 0)
+    else:
+        raise ValueError("Invalid option type. Use 'call' or 'put'.")
+    
+    option_price = np.mean(payoffs) * np.exp(-r * T)
+    return option_price
 
-# TODO: Jump Diffusion Simulation
+def mle_gbm(ticker):
+    """
+    Maximum likelihood estimation for GBM parameters (mu and delta).
+    
+    Parameters:
+    - ticker: Stock ticker symbol
+    
+    Returns:
+    - mu, sigma: GBM parameters
+    """
+    # Define the date range
+    end_date = datetime.today().strftime('%Y-%m-%d')
+    start_date = (datetime.today() - timedelta(days=18*30)).strftime('%Y-%m-%d')  # Approximate 18 months back
+
+    # Fetch stock data
+    data = yf.download(ticker, start=start_date, end=end_date)['Adj Close']
+    
+    # Calculate daily log returns
+    log_returns = np.log(data / data.shift(1))
+    
+    # Drop NaN values from log returns
+    log_returns = log_returns.dropna()
+    
+    # Estimate mu and sigma
+    mu = log_returns.mean()
+    sigma = log_returns.std()
+    
+    return mu, sigma
+
+def estimate_jump_parameters(ticker):
+    """
+    Estimate jump parameters (lambda, mu, and delta) using historical data.
+    
+    Parameters:
+    - data: Stock price data
+    
+    Returns:
+    - lam, mu, delta: Jump diffusion parameters
+    """
+    end_date = datetime.today().strftime('%Y-%m-%d')
+    start_date = (datetime.today() - timedelta(days=18*30)).strftime('%Y-%m-%d')  # Approximate 18 months back
+    
+    # Fetch stock data
+    data = yf.download(ticker, start=start_date, end=end_date)['Adj Close']
+    
+    # Calculate daily log returns
+    log_returns = np.log(data / data.shift(1))
+    
+    # Drop NaN values from log returns
+    log_returns = log_returns.dropna()
+    
+    # Detect jumps (for illustration, using 3 standard deviations as threshold)
+    threshold = 3 * log_returns.std()
+    jumps = log_returns[np.abs(log_returns) > threshold]
+    
+    # Estimate jump parameters
+    lam = len(jumps) / len(log_returns)
+    mu_j = jumps.mean()
+    delta_j = jumps.std()
+    
+    return lam, mu_j, delta_j
+
 def jump_diffusion_simulation(S, r, sigma, T, lam, mu, delta, n_simulations, dt):
     """
     Simulate the stock price paths using the Merton Jump Diffusion model.
@@ -331,8 +571,26 @@ def jump_diffusion_simulation(S, r, sigma, T, lam, mu, delta, n_simulations, dt)
     Returns:
     ndarray: A 2D array where each column is a simulated stock price path.
     """
-    # TODO: Implement the jump diffusion simulation.
-    pass
+    n_steps = int(T/dt)
+    paths = np.zeros((n_steps, n_simulations))
+    
+    paths[0] = S
+    
+    for t in range(1, n_steps):
+        # GBM component
+        Z = np.random.normal(size=n_simulations)
+        drift = (r - 0.5 * sigma**2) * dt
+        diffusion = sigma * np.sqrt(dt) * Z
+        
+        # Jump component
+        N = np.random.poisson(lam * dt, n_simulations)  # Number of jumps
+        Y = np.random.normal(mu, delta, n_simulations)  # Jump size
+        jump = N * Y
+        
+        # Combine GBM and jump components
+        paths[t] = paths[t-1] * np.exp(drift + diffusion + jump)
+    
+    return paths
 
 def jump_diffusion_option_price(S, K, T, r, sigma, lam, mu, delta, option_type='call', n_simulations=10000):
     """
@@ -344,25 +602,312 @@ def jump_diffusion_option_price(S, K, T, r, sigma, lam, mu, delta, option_type='
     Returns:
     float: The estimated option price.
     """
-    # TODO: Use the jump_diffusion_simulation function and average the results to get the option price.
-    pass
+    dt = T / 252  # Daily increment
+    paths = jump_diffusion_simulation(S, r, sigma, T, lam, mu, delta, n_simulations, dt)
+    if option_type.lower() in ['call', 'c']:
+        payoffs = np.maximum(paths[-1] - K, 0)
+    elif option_type.lower() in ['put', 'p']:
+        payoffs = np.maximum(K - paths[-1], 0)
+    else:
+        raise ValueError("Invalid option type. Use 'call' or 'put'.")
+    
+    option_price = np.mean(payoffs) * np.exp(-r * T)
+    return option_price
+
+def price_my_option(contract_name, model):
+    """
+    Price an option using either the Black-Scholes model, the Monte Carlo simulation, 
+    or the Jump Diffusion simulation.
+    """
+    # Extracting parameters
+    S = get_underlying_price(contract_name)
+    K = strike_price(contract_name)
+    T = time_to_maturity(contract_name) / 365
+    r = get_risk_free_rate() / 100
+    sigma = get_historical_volatility(contract_name)
+    option_type = 'call' if extract_option_type(contract_name) == 'C' else 'put'
+    
+    # Using the chosen model to price the option
+    if model == "black_scholes":
+        return black_scholes(S, K, T, r, sigma, option_type)
+    elif model == "monte_carlo":
+        return monte_carlo_option_price(S, K, T, r, sigma, option_type)
+    elif model == "jump_diffusion":
+        ticker = get_ticker_from_contract(contract_name)
+        lam, mu, delta = estimate_jump_parameters(ticker)
+        delta = sigma / 2  # This is just a placeholder. You may need to refine this value.
+        return jump_diffusion_option_price(S, K, T, r, sigma, lam, mu, delta, option_type)
+    else:
+        raise ValueError(f"Unknown model: {model}")
+    
+def avg_contract_price_with_all_models(contract_name):
+    monte_carlo = price_my_option(contract_name, 'monte_carlo')
+    jump_diffusion = price_my_option(contract_name, 'jump_diffusion')
+    black_scholes = price_my_option(contract_name, 'black_scholes')
+    price = (monte_carlo + jump_diffusion + black_scholes) / 3
+    return price
+
+def decide_trade(ticker):
+    """
+    Decide whether to buy a call or put option based on technical indicators.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+
+    Returns:
+    str: 'call' if bullish sentiment, 'put' if bearish sentiment, 'neutral' if indicators are mixed.
+    """
+    data = get_data(ticker, '5m')
+    roc_value = price_rate_of_change(ticker, n=3).iloc[-1]  # Adjusted for 5min timeframe
+    sma_value = moving_average(ticker, n=10).iloc[-1]  # Adjusted for 5min timeframe
+    vwap_value = vwap(ticker).iloc[-1]
+    rsi_value = relative_strength_index(ticker, n=3).iloc[-1]  # Adjusted for 5min timeframe
+    bollinger = bollinger_bands(ticker, n=4).iloc[-1]  # Adjusted for 5min timeframe
+    close_value = data['Close'].iloc[-1]
+    ema_27 = exponential_moving_average(ticker, 27).iloc[-1]
+    ema_56 = exponential_moving_average(ticker, 56).iloc[-1]
+    ema_108 = exponential_moving_average(ticker, 108).iloc[-1]
+
+    bullish_indicators = 0
+    bearish_indicators = 0
+
+    # ROC
+    if roc_value > 0:
+        bullish_indicators += 1
+    else:
+        bearish_indicators += 1
+
+    # SMA
+    if close_value > sma_value:
+        bullish_indicators += 1
+    else:
+        bearish_indicators += 1
+
+    # VWAP
+    if close_value > vwap_value:
+        bullish_indicators += 1
+    else:
+        bearish_indicators += 1
+
+    # RSI
+    if rsi_value < 30:
+        bullish_indicators += 1
+    elif rsi_value > 70:
+        bearish_indicators += 1
+
+    # Bollinger Bands
+    if close_value > bollinger['Upper Band']:
+        bullish_indicators += 1
+    elif close_value < bollinger['Lower Band']:
+        bearish_indicators += 1
+
+    # EMA cross
+    if ema_27 > ema_56 and ema_27 > ema_108:
+        bullish_indicators += 1
+    elif ema_27 < ema_56 or ema_27 < ema_108:
+        bearish_indicators += 1
+
+    if bullish_indicators >= 4:
+        return 'call'
+    elif bearish_indicators >= 4:
+        return 'put'
+    else:
+        return 'neutral'
+
+def forecast_from_indicator(ticker, indicator_function):
+    """
+    Calculate the forecast using a specific indicator's method.
+    """
+    if indicator_function == bollinger_bands:
+        current_value = indicator_function(ticker)["SMA"].iloc[-1]
+    else:
+        current_value = indicator_function(ticker).iloc[-1]
+
+    data = get_data(ticker, period='5m')
+    last_value = data['Close'].iloc[-1]
+
+    # Forecast is a projection of the difference
+    return last_value + (current_value - last_value)
+
+def combined_forecast(ticker):
+    """
+    Calculate the combined forecast based on sentiment and various forecasting methods.
+
+    Parameters:
+    ticker (str): Stock ticker symbol.
+
+    Returns:
+    float: Combined forecasted price.
+    """
+    sentiment = decide_trade(ticker)
+    
+    # Define indicator functions and their initial weights
+    indicators = [price_rate_of_change, moving_average, vwap, relative_strength_index, bollinger_bands]
+    weights = [0.3, 0.2, 0.3, 0.15, 0.05]  # Initial weights (can be adjusted based on sentiment)
+    
+    forecasts = []
+    for i, indicator_function in enumerate(indicators):
+        forecast_value = forecast_from_indicator(ticker, indicator_function)
+        forecasts.append(forecast_value)
+        if (sentiment == 'call' and forecast_value > get_data(ticker, period='5m')['Close'].iloc[-1]) or \
+           (sentiment == 'put' and forecast_value < get_data(ticker, period='5m')['Close'].iloc[-1]):
+            weights[i] += 0.1  # Increase weight by 10% if the forecast aligns with sentiment
+    
+    # Normalize the weights to ensure they sum up to 1
+    total_weight = sum(weights)
+    normalized_weights = [w/total_weight for w in weights]
+    
+    # Combine forecasts based on weights
+    weighted_forecast_sum = sum([forecasts[i] * normalized_weights[i] for i in range(len(forecasts))])
+    
+    # Add in the linear regression and SMA forecast
+    lr_forecast = linear_regression_forecast(ticker)
+    sma_forecast = simple_moving_forecast(ticker)
+    
+    combined_forecast = (weighted_forecast_sum + lr_forecast + sma_forecast) / 3
+
+    # Apply light exponential smoothing
+    alpha = 0.1  # A small value for light smoothing
+    data = get_data(ticker, period='5m')
+    last_close = data['Close'].iloc[-1]
+    smoothed_forecast = alpha * combined_forecast + (1 - alpha) * last_close
+
+    return smoothed_forecast
+
+def ideal_0DTE_contract(ticker, sentiment, expected_move):
+    """
+    Select the ideal 0DTE option contract based on sentiment and expected price move.
+
+    Parameters:
+    - ticker (str): Stock ticker symbol.
+    - sentiment (str): Either 'call' or 'put'.
+    - expected_move (float): Expected price move in the underlying.
+
+    Returns:
+    str: The ideal 0DTE contract name.
+    """
+    # Ensure sentiment is valid
+    if sentiment not in ['call', 'put']:
+        raise ValueError("Sentiment should be either 'call' or 'put'.")
+
+    # Get the current price of the underlying
+    underlying_price = yf.Ticker(ticker).history(period="1d")['Close'].iloc[0]
+
+    # Determine the expected price after the move
+    target_price = underlying_price + expected_move if sentiment == 'call' else underlying_price - expected_move
+    if sentiment == 'call':
+        sentiment == 'c'
+    elif sentiment == 'put':
+        sentiment == 'p'
+    # Get the options chain
+    option_chain = yo.get_chain_greeks(stock_ticker=ticker, dividend_yield=0, option_type=sentiment)
+
+    # Add columns for Expiry and Option Type using get_expiry and extract_option_type functions
+    option_chain['Expiry'] = option_chain['Symbol'].apply(get_expiry)
+    option_chain['OptionType'] = option_chain['Symbol'].apply(extract_option_type)
+
+    # Filter based on 0DTE and sentiment
+    expiry_date = datetime.today().strftime('%Y-%m-%d')
+    filtered_options = option_chain[
+        (option_chain['Expiry'] == expiry_date) &
+        (option_chain['OptionType'].str.lower() == sentiment)
+    ]
+
+    if filtered_options.empty:
+        raise ValueError("No suitable options found for the given criteria.")
+
+    # Sort based on closeness to target price and then by liquidity (volume and open interest)
+    filtered_options['Distance'] = abs(filtered_options['Strike'] - target_price)
+    sorted_options = filtered_options.sort_values(by=['Distance', 'Volume', 'Open Interest'], ascending=[True, False, False])
+
+    # Return the first (most suitable) option's ticker
+    return sorted_options['Symbol'].iloc[0]
 
 
+def zero_dte_options(ticker):
+    #sentiment = decide_trade(ticker)
+    sentiment = 'call'
+    expected_price = combined_forecast(ticker)
+    
+    if sentiment == 'call':
+        return ideal_0DTE_contract(ticker, sentiment, expected_price)
+    elif sentiment == 'put':
+        return ideal_0DTE_contract(ticker, sentiment, expected_price)
+    else:
+        return "Neutral"
+    
 if __name__ == '__main__':    
     '''
-    print(get_expiry('BA231027C00200000'))
-    print(black_scholes(100, 95, 1, 0.05, 0.2, 'call'))
-    print(time_to_maturity('BA231027C00200000'))
-    print(strike_price('BA231027C00200000'))
-    print(get_ticker_from_contract('BA231027C00200000'))
-    print(get_underlying_price('BA231027C00200000'))
-    print(get_implied_volatility('BA231027C00200000'))
-    print(extract_option_type('BA231027C00200000'))
-    print(get_risk_free_rate())
-    print(get_historical_volatility('BA231027C00200000'))
-    print(ideal_contract_price('BA231027C00200000'))
-    print(get_ideal_contract('BA', 200, '2023-10-26'))
-    print(profitability_range('BA231027C00200000', 170, 190))   
-    print(under_valued_contracts('BA'))
-    print(over_valued_contracts('BA'))
+    print("Expiry of contract BA231027C00200000:", get_expiry('BA231027C00200000'))
+    print("Black-Scholes option price:", black_scholes(100, 95, 1, 0.05, 0.2, 'call'))
+    print("Time to maturity of contract BA231027C00200000:", time_to_maturity('BA231027C00200000'))
+    print("Strike price of contract BA231027C00200000:", strike_price('BA231027C00200000'))
+    print("Ticker from contract BA231027C00200000:", get_ticker_from_contract('BA231027C00200000'))
+    print("Underlying price of contract BA231027C00200000:", get_underlying_price('BA231027C00200000'))
+    print("Implied volatility of contract BA231027C00200000:", get_implied_volatility('BA231027C00200000'))
+    print("Option type of contract BA231027C00200000:", extract_option_type('BA231027C00200000'))
+    print("Current risk-free rate:", get_risk_free_rate())
+    print("Historical volatility of contract BA231027C00200000:", get_historical_volatility('BA231027C00200000'))
+    print("Ideal contract price for BA231027C00200000:", ideal_contract_price('BA231027C00200000'))
+    print("Ideal contract for BA with strike 200 and expiry '2023-10-26':", get_ideal_contract('BA', 200, '2023-10-26'))
+    print("Profitability range for contract BA231027C00200000 between 170 and 190:", profitability_range('BA231027C00200000', 170, 190))
+    print("Undervalued contracts for BA:", under_valued_contracts('BA'))
+    print("Overvalued contracts for BA:", over_valued_contracts('BA'))
+    
+    # For monte_carlo_simulation
+    sample_paths = monte_carlo_simulation(100, 0.05, 0.2, 1, 1000, 1/252)
+    print("First 5 simulated paths from monte_carlo_simulation:", sample_paths[:5])
+
+    # For monte_carlo_option_price
+    mc_price = monte_carlo_option_price(100, 95, 1, 0.05, 0.2, 'call')
+    print("Option price using Monte Carlo simulation:", mc_price)
+
+    # For mle_gbm
+    mu, sigma = mle_gbm('BA')
+    print(f"MLE GBM parameters for BA - Mu: {mu}, Sigma: {sigma}")
+
+    # For estimate_jump_parameters
+    lam, mu_j, delta_j = estimate_jump_parameters('BA')
+    print(f"Jump parameters for BA - Lambda: {lam}, Mu: {mu_j}, Delta: {delta_j}")
+
+    # For jump_diffusion_simulation
+    sample_jump_paths = jump_diffusion_simulation(100, 0.05, 0.2, 1, lam, mu_j, delta_j, 1000, 1/252)
+    print("First 5 simulated paths from jump_diffusion_simulation:", sample_jump_paths[:5])
+
+    # For jump_diffusion_option_price
+    jd_price = jump_diffusion_option_price(100, 95, 1, 0.05, 0.2, lam, mu_j, delta_j)
+    print("Option price using Jump Diffusion simulation:", jd_price)
+    
+    # For Black-Scholes model
+    option_price_bs = price_my_option('BA231027C00200000', 'black_scholes')
+    print(f"Option price for BA231027C00200000 using Black-Scholes model: {option_price_bs}")
+
+    # For Monte Carlo simulation
+    option_price_mc = price_my_option('BA231027C00200000', 'monte_carlo')
+    print(f"Option price for BA231027C00200000 using Monte Carlo simulation: {option_price_mc}")
+    
+    # For Jump Diffusion simulation
+    option_price_jd = price_my_option('BA231027C00200000', 'jump_diffusion')
+    print(f"Option price for BA231027C00200000 using Jump Diffusion simulation: {option_price_jd}")
+    
+    print(avg_contract_price_with_all_models('BA231027C00200000'))
+    
+    print("EMA for BA:", exponential_moving_average('BA').iloc[-1])
+    print("Price Rate of Change for BA:", price_rate_of_change('BA').iloc[-1])
+    print("Simple Moving Average for BA:", moving_average('BA').iloc[-1])
+    print("VWAP for BA:", vwap('BA').iloc[-1])
+    print("Simple Moving Forecast for BA:", simple_moving_forecast('BA'))
+    print("Relative Strength Index for BA:", relative_strength_index('BA').iloc[-1])
+    print("Bollinger Bands for BA:", bollinger_bands('BA').iloc[-1])
+    print("Trade Decision for BA:", decide_trade('BA'))
+
+    
+    print("Linear Regression Forecast for BA:", linear_regression_forecast('BA'))
+
+    # Using forecast_from_indicator with 'moving_average' as an example. You can replace with other indicators.
+
+    print("Forecast from moving_average for BA:", forecast_from_indicator('BA', moving_average))
+    
+    print("Combined Forecast for SPY:", combined_forecast('SPY'))
     '''
+    print(zero_dte_options('SPY'))

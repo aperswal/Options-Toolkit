@@ -872,6 +872,173 @@ def setup_iron_condor(ticker, dividend_yield=0, risk_free_rate=None, distance=1,
         "Max Loss": max_loss
     }
 
+# TODO: Function to fetch a list of block buys and block sells for a given ticker.
+def get_block_activity(ticker):
+    """
+    Fetch and return a list of block buys and block sells that are significant for the given stock/option ticker.
+    
+    Args:
+    - ticker: str, Ticker symbol of the stock/option
+    
+    Returns:
+    - Dict: {
+        'block_buys': List[Tuple[date, volume, price]],
+        'block_sells': List[Tuple[date, volume, price]]
+      }
+    """
+    pass
+
+# TODO: Function to display unusual options activity for a given ticker.
+def get_unusual_options_activity(ticker):
+    """
+    Fetch and display unusual options activity for the given ticker.
+    
+    Args:
+    - ticker: str, Ticker symbol of the stock/option
+    
+    Returns:
+    - List[Dict]: [
+        {
+            'date': date,
+            'strike': float,
+            'expiry': date,
+            'volume': int,
+            'open_interest': int,
+            'action': str ('buy'/'sell'),
+            'option_type': str ('call'/'put')
+        },
+        ...
+      ]
+    """
+    pass
+
+# TODO: Function to fetch unusual stock activity for a given stock ticker.
+def get_unusual_stock_activity(ticker):
+    """
+    Fetch and return unusual stock activity for the given ticker.
+    
+    Unusual stock activity can be in terms of sudden spikes in volume, price gaps, etc.
+    
+    Args:
+    - ticker: str, Ticker symbol of the stock
+    
+    Returns:
+    - Dict: {
+        'date': date,
+        'opening_price': float,
+        'closing_price': float,
+        'highest_price': float,
+        'lowest_price': float,
+        'volume': int,
+        'unusual_activity_type': str (e.g., 'Volume Spike', 'Price Gap')
+      }
+    """
+    pass
+
+# TODO: Function to fetch a news feed related to a given stock ticker.
+def get_news_feed(ticker):
+    """
+    Fetch and display a news feed related to the given stock ticker.
+    
+    Args:
+    - ticker: str, Ticker symbol of the stock
+    
+    Returns:
+    - List[Dict]: [
+        {
+            'headline': str,
+            'source': str,
+            'date': date,
+            'link': str (URL to the news article)
+        },
+        ...
+      ]
+    """
+    pass
+
+# TODO: Function to check for Golden Cross
+def golden_cross(ticker, SMA1, SMA2, timeframe='5m'):
+    """
+    Check for the occurrence of a Golden Cross.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    SMA1 (int): Period for the shorter-term SMA.
+    SMA2 (int): Period for the longer-term SMA.
+    timeframe (str): Time frame to check. Default is '5m'.
+    
+    Returns:
+    str: Describes whether a Golden Cross has recently occurred, is currently happening, or may likely happen.
+    """
+    pass
+
+# TODO: Function to check for Death Cross
+def death_cross(ticker, SMA1, SMA2, timeframe='5m'):
+    """
+    Check for the occurrence of a Death Cross.
+    
+    Parameters are similar to golden_cross.
+    
+    Returns:
+    str: Describes whether a Death Cross has recently occurred, is currently happening, or may likely happen.
+    """
+    pass
+
+# TODO: Function to check for Bullish Engulfing pattern
+def bullish_engulfing(ticker, timeframe='1d'):
+    """
+    Check for the occurrence of a Bullish Engulfing candlestick pattern.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    timeframe (str): Time frame to check. Default is '1d'.
+    
+    Returns:
+    str: Describes whether a Bullish Engulfing has recently occurred or is currently happening.
+    """
+    pass
+
+# TODO: Function to check for Bearish Engulfing pattern
+def bearish_engulfing(ticker, timeframe='1d'):
+    """
+    Check for the occurrence of a Bearish Engulfing candlestick pattern.
+    
+    Parameters are similar to bullish_engulfing.
+    
+    Returns:
+    str: Describes whether a Bearish Engulfing has recently occurred or is currently happening.
+    """
+    pass
+
+# TODO: Function to check for Double Bottom pattern
+def double_bottom(ticker, timeframe='1d'):
+    """
+    Check for the occurrence of a Double Bottom pattern.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    timeframe (str): Time frame to check. Default is '1d'.
+    
+    Returns:
+    str: Describes whether a Double Bottom has recently occurred, is currently forming, or has just completed.
+    """
+    pass
+
+# TODO: Function to check for Double Top pattern
+def double_top(ticker, timeframe='1d'):
+    """
+    Check for the occurrence of a Double Top pattern.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    timeframe (str): Time frame to check. Default is '1d'.
+    
+    Returns:
+    str: Describes whether a Double Top has recently occurred, is currently forming, or has just completed.
+    """
+    pass
+
+
 if __name__ == '__main__':    
     '''
     print("Expiry of contract BA231027C00200000:", get_expiry('BA231027C00200000'))

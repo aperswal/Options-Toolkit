@@ -648,6 +648,43 @@ def avg_contract_price_with_all_models(contract_name):
     price = (monte_carlo + jump_diffusion + black_scholes) / 3
     return price
 
+def get_data_via_ticker(ticker_symbol, period='1d', interval='1d'):
+    ticker = yf.Ticker(ticker_symbol)
+    data = ticker.history(period=period, interval=interval)
+    return data
+
+def bullish_engulfing(ticker_symbol, period='5d', interval='90m'):
+    data = get_data_via_ticker(ticker_symbol, period, interval)
+    
+    if len(data) < 2:
+        return "Not enough data for pattern detection."
+    
+    current_candle = data.iloc[-1]
+    previous_candle = data.iloc[-2]
+
+    if previous_candle['Close'] < previous_candle['Open'] and \
+       current_candle['Close'] > current_candle['Open'] and \
+       current_candle['Open'] < previous_candle['Close'] and \
+       current_candle['Close'] > previous_candle['Open']:
+        return "A Bullish Engulfing has recently occurred."
+    return "No Bullish Engulfing detected."
+
+def bearish_engulfing(ticker_symbol, period='5d', interval='90m'):
+    data = get_data_via_ticker(ticker_symbol, period, interval)
+    
+    if len(data) < 2:
+        return "Not enough data for pattern detection."
+    
+    current_candle = data.iloc[-1]
+    previous_candle = data.iloc[-2]
+
+    if previous_candle['Close'] > previous_candle['Open'] and \
+       current_candle['Close'] < current_candle['Open'] and \
+       current_candle['Open'] > previous_candle['Close'] and \
+       current_candle['Close'] < previous_candle['Open']:
+        return "A Bearish Engulfing has recently occurred."
+    return "No Bearish Engulfing detected."
+
 def golden_cross(ticker, SMA1, SMA2, timeframe='5m'):
     """
     Check for the occurrence of a Golden Cross.
@@ -693,48 +730,6 @@ def death_cross(ticker, SMA1, SMA2, timeframe='5m'):
     if death_cross_occur:
         return "A Death Cross has recently occurred."
     return "No Death Cross detected."
-
-def bullish_engulfing(ticker, timeframe='1d'):
-    """
-    Check for the occurrence of a Bullish Engulfing candlestick pattern.
-    
-    Parameters:
-    ticker (str): Stock ticker symbol.
-    timeframe (str): Time frame to check. Default is '1d'.
-    
-    Returns:
-    str: Describes whether a Bullish Engulfing has recently occurred or is currently happening.
-    """
-    data = get_data(ticker, timeframe)
-    current_candle = data.iloc[-1]
-    previous_candle = data.iloc[-2]
-
-    if previous_candle['Close'] > previous_candle['Open'] and \
-       current_candle['Close'] > current_candle['Open'] and \
-       current_candle['Open'] < previous_candle['Close'] and \
-       current_candle['Close'] > previous_candle['Open']:
-        return "A Bullish Engulfing has recently occurred."
-    return "No Bullish Engulfing detected."
-
-def bearish_engulfing(ticker, timeframe='1d'):
-    """
-    Check for the occurrence of a Bearish Engulfing candlestick pattern.
-    
-    Parameters are similar to bullish_engulfing.
-    
-    Returns:
-    str: Describes whether a Bearish Engulfing has recently occurred or is currently happening.
-    """
-    data = get_data(ticker, timeframe)
-    current_candle = data.iloc[-1]
-    previous_candle = data.iloc[-2]
-
-    if previous_candle['Close'] < previous_candle['Open'] and \
-       current_candle['Close'] < current_candle['Open'] and \
-       current_candle['Open'] > previous_candle['Close'] and \
-       current_candle['Close'] < previous_candle['Open']:
-        return "A Bearish Engulfing has recently occurred."
-    return "No Bearish Engulfing detected."
 
 def double_bottom(ticker, timeframe='1d', price_tolerance_percent=5):
     """
@@ -1268,6 +1263,14 @@ if __name__ == '__main__':
     print("Forecast from moving_average for BA:", forecast_from_indicator('BA', moving_average))
     
     print("Combined Forecast for SPY:", combined_forecast('SPY'))
+    
+    print (golden_cross('SPY', 57, 108, '5m'))
+    print (death_cross('SPY', 57, 108, '5m'))
+    print (double_bottom('SPY'))
+    print (double_top('SPY'))
+    print (bullish_engulfing('BA'))
+    print (bearish_engulfing('GOOGL'))
     '''
+
     # print(zero_dte_options('SPY'))
     # print(setup_iron_condor('SPY'))

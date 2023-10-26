@@ -10,6 +10,7 @@ from scipy.stats import norm
 import yfinance as yf
 import yoptions as yo
 from sklearn.linear_model import LinearRegression
+from scipy.signal import argrelextrema
 
 # Constants
 ANNUAL_TRADING_DAYS = 252
@@ -647,6 +648,146 @@ def avg_contract_price_with_all_models(contract_name):
     price = (monte_carlo + jump_diffusion + black_scholes) / 3
     return price
 
+def golden_cross(ticker, SMA1, SMA2, timeframe='5m'):
+    """
+    Check for the occurrence of a Golden Cross.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    SMA1 (int): Period for the shorter-term SMA.
+    SMA2 (int): Period for the longer-term SMA.
+    timeframe (str): Time frame to check. Default is '5m'.
+    
+    Returns:
+    str: Describes whether a Golden Cross has recently occurred, is currently happening, or may likely happen.
+    """
+    data = get_data(ticker, timeframe)
+    short_sma = data['Close'].rolling(window=SMA1).mean()
+    long_sma = data['Close'].rolling(window=SMA2).mean()
+
+    # Detect Cross
+    cross = short_sma > long_sma
+    golden_cross_occur = cross.iloc[-1] and not cross.iloc[-2]
+
+    if golden_cross_occur:
+        return "A Golden Cross has recently occurred."
+    return "No Golden Cross detected."
+
+def death_cross(ticker, SMA1, SMA2, timeframe='5m'):
+    """
+    Check for the occurrence of a Death Cross.
+    
+    Parameters are similar to golden_cross.
+    
+    Returns:
+    str: Describes whether a Death Cross has recently occurred, is currently happening, or may likely happen.
+    """
+    data = get_data(ticker, timeframe)
+    short_sma = data['Close'].rolling(window=SMA1).mean()
+    long_sma = data['Close'].rolling(window=SMA2).mean()
+
+    # Detect Cross
+    cross = short_sma < long_sma
+    death_cross_occur = cross.iloc[-1] and not cross.iloc[-2]
+
+    if death_cross_occur:
+        return "A Death Cross has recently occurred."
+    return "No Death Cross detected."
+
+def bullish_engulfing(ticker, timeframe='1d'):
+    """
+    Check for the occurrence of a Bullish Engulfing candlestick pattern.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    timeframe (str): Time frame to check. Default is '1d'.
+    
+    Returns:
+    str: Describes whether a Bullish Engulfing has recently occurred or is currently happening.
+    """
+    data = get_data(ticker, timeframe)
+    current_candle = data.iloc[-1]
+    previous_candle = data.iloc[-2]
+
+    if previous_candle['Close'] > previous_candle['Open'] and \
+       current_candle['Close'] > current_candle['Open'] and \
+       current_candle['Open'] < previous_candle['Close'] and \
+       current_candle['Close'] > previous_candle['Open']:
+        return "A Bullish Engulfing has recently occurred."
+    return "No Bullish Engulfing detected."
+
+def bearish_engulfing(ticker, timeframe='1d'):
+    """
+    Check for the occurrence of a Bearish Engulfing candlestick pattern.
+    
+    Parameters are similar to bullish_engulfing.
+    
+    Returns:
+    str: Describes whether a Bearish Engulfing has recently occurred or is currently happening.
+    """
+    data = get_data(ticker, timeframe)
+    current_candle = data.iloc[-1]
+    previous_candle = data.iloc[-2]
+
+    if previous_candle['Close'] < previous_candle['Open'] and \
+       current_candle['Close'] < current_candle['Open'] and \
+       current_candle['Open'] > previous_candle['Close'] and \
+       current_candle['Close'] < previous_candle['Open']:
+        return "A Bearish Engulfing has recently occurred."
+    return "No Bearish Engulfing detected."
+
+def double_bottom(ticker, timeframe='1d', price_tolerance_percent=5):
+    """
+    Check for the occurrence of a Double Bottom pattern.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    timeframe (str): Time frame to check. Default is '1d'.
+    
+    Returns:
+    str: Describes whether a Double Bottom has recently occurred, is currently forming, or has just completed.
+    """
+    data = get_data(ticker, timeframe)['Close']
+    
+    # Identify local minima
+    local_minima = argrelextrema(data.values, np.less)[0]
+    
+    for i in range(len(local_minima) - 1):
+        first_trough = data.iloc[local_minima[i]]
+        second_trough = data.iloc[local_minima[i+1]]
+        
+        # Check if the two troughs are roughly equal in depth
+        if abs(first_trough - second_trough) <= (price_tolerance_percent / 100) * first_trough:
+            # Additional logic can be added to confirm the pattern using volume, distance between troughs, etc.
+            return "Potential Double Bottom detected!"
+    return "No Double Bottom detected."
+
+def double_top(ticker, timeframe='1d', price_tolerance_percent=5):
+    """
+    Check for the occurrence of a Double Top pattern.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+    timeframe (str): Time frame to check. Default is '1d'.
+    
+    Returns:
+    str: Describes whether a Double Top has recently occurred, is currently forming, or has just completed.
+    """
+    data = get_data(ticker, timeframe)['Close']
+    
+    # Identify local maxima
+    local_maxima = argrelextrema(data.values, np.greater)[0]
+    
+    for i in range(len(local_maxima) - 1):
+        first_peak = data.iloc[local_maxima[i]]
+        second_peak = data.iloc[local_maxima[i+1]]
+        
+        # Check if the two peaks are roughly equal in height
+        if abs(first_peak - second_peak) <= (price_tolerance_percent / 100) * first_peak:
+            # Additional logic can be added to confirm the pattern using volume, distance between peaks, etc.
+            return "Potential Double Top detected!"
+    return "No Double Top detected."
+
 def decide_trade(ticker):
     """
     Decide whether to buy a call or put option based on technical indicators.
@@ -956,85 +1097,100 @@ def get_news_feed(ticker):
     """
     pass
 
-# TODO: Function to check for Golden Cross
-def golden_cross(ticker, SMA1, SMA2, timeframe='5m'):
+# TODO: Function to visualize option Greeks for a given contract
+def visualize_greeks(ticker):
     """
-    Check for the occurrence of a Golden Cross.
+    Visualizes the Greeks (Delta, Gamma, Vega, Theta, Rho) for a given contract or ticker.
     
     Parameters:
     ticker (str): Stock ticker symbol.
-    SMA1 (int): Period for the shorter-term SMA.
-    SMA2 (int): Period for the longer-term SMA.
-    timeframe (str): Time frame to check. Default is '5m'.
-    
+    contract (str, optional): Specific options contract. If None, visualize for a set of contracts.
+
     Returns:
-    str: Describes whether a Golden Cross has recently occurred, is currently happening, or may likely happen.
+    Visualization: Plot showing values of Greeks.
     """
+    call_chain = yo.get_chain_greeks(stock_ticker=ticker, dividend_yield=0, option_type='c', risk_free_rate=None)
+    put_chain = yo.get_chain_greeks(stock_ticker=ticker, dividend_yield=0, option_type='p', risk_free_rate=None)
     pass
 
-# TODO: Function to check for Death Cross
-def death_cross(ticker, SMA1, SMA2, timeframe='5m'):
+# TODO: Function to visualize theta decay for a range of contracts
+def visualize_theta_decay(ticker):
     """
-    Check for the occurrence of a Death Cross.
-    
-    Parameters are similar to golden_cross.
-    
-    Returns:
-    str: Describes whether a Death Cross has recently occurred, is currently happening, or may likely happen.
-    """
-    pass
-
-# TODO: Function to check for Bullish Engulfing pattern
-def bullish_engulfing(ticker, timeframe='1d'):
-    """
-    Check for the occurrence of a Bullish Engulfing candlestick pattern.
+    Visualizes theta decay for a range of contracts.
     
     Parameters:
     ticker (str): Stock ticker symbol.
-    timeframe (str): Time frame to check. Default is '1d'.
-    
+    contracts_range (list, optional): List of contracts to visualize. If None, select a default range.
+
     Returns:
-    str: Describes whether a Bullish Engulfing has recently occurred or is currently happening.
+    Visualization: Plot showing theta decay over time.
+    """
+    call_chain = yo.get_chain_greeks(stock_ticker=ticker, dividend_yield=0, option_type='c', risk_free_rate=None)
+    put_chain = yo.get_chain_greeks(stock_ticker=ticker, dividend_yield=0, option_type='p', risk_free_rate=None)
+    pass
+
+# TODO: Options contract screener based on user-defined criteria
+def options_contract_screener(criteria):
+    """
+    Screens options contracts based on user-defined criteria.
+    
+    Parameters:
+    criteria (dict): Dictionary containing screening criteria.
+
+    Returns:
+    list: List of contracts that meet the criteria.
     """
     pass
 
-# TODO: Function to check for Bearish Engulfing pattern
-def bearish_engulfing(ticker, timeframe='1d'):
+# TODO: Function to perform sentiment analysis from news feeds for a given ticker
+def news_sentiment_analysis(ticker):
     """
-    Check for the occurrence of a Bearish Engulfing candlestick pattern.
-    
-    Parameters are similar to bullish_engulfing.
-    
-    Returns:
-    str: Describes whether a Bearish Engulfing has recently occurred or is currently happening.
-    """
-    pass
-
-# TODO: Function to check for Double Bottom pattern
-def double_bottom(ticker, timeframe='1d'):
-    """
-    Check for the occurrence of a Double Bottom pattern.
+    Analyzes sentiment from news feeds for a given ticker.
     
     Parameters:
     ticker (str): Stock ticker symbol.
-    timeframe (str): Time frame to check. Default is '1d'.
-    
+
     Returns:
-    str: Describes whether a Double Bottom has recently occurred, is currently forming, or has just completed.
+    dict: Dictionary containing sentiment scores and relevant news headlines.
     """
     pass
 
-# TODO: Function to check for Double Top pattern
-def double_top(ticker, timeframe='1d'):
+# TODO: Function to analyze mentions and sentiment from Reddit boards for a given ticker
+def reddit_sentiment_analysis(ticker):
     """
-    Check for the occurrence of a Double Top pattern.
+    Analyzes mentions and sentiment from Reddit boards for a given ticker.
     
     Parameters:
     ticker (str): Stock ticker symbol.
-    timeframe (str): Time frame to check. Default is '1d'.
-    
+
     Returns:
-    str: Describes whether a Double Top has recently occurred, is currently forming, or has just completed.
+    dict: Dictionary containing sentiment scores, number of mentions, and relevant Reddit comments.
+    """
+    pass
+
+# TODO: Function to analyze mentions and sentiment from StockTwits for a given ticker
+def stocktwits_sentiment_analysis(ticker):
+    """
+    Analyzes mentions and sentiment from StockTwits for a given ticker.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+
+    Returns:
+    dict: Dictionary containing sentiment scores, number of mentions, and relevant StockTwits messages.
+    """
+    pass
+
+# TODO: Combine all sentiment analysis results for comprehensive view
+def combined_sentiment_analysis(ticker):
+    """
+    Combines sentiment analysis results from news feeds, Reddit, and StockTwits for a comprehensive view.
+    
+    Parameters:
+    ticker (str): Stock ticker symbol.
+
+    Returns:
+    dict: Combined sentiment scores and sources.
     """
     pass
 

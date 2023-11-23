@@ -1,70 +1,65 @@
-# Option Analysis Tool
+# Options Contract Pricing Project
 
-This tool offers a collection of financial functions and utilities to analyze options, their prices, and other associated attributes.
+## Overview
+The Options Contract Pricing Project is designed to provide advanced tools and analytics for options traders. It integrates market sentiment analysis, options pricing models, and volatility evaluation, offering a comprehensive suite of functionalities.
 
-## Dependencies
+## Modules and Their Functions
 
-The following standard libraries are used:
-- `math`
-- `re`
-- `datetime`
+### Data_Utils.py
+- `get_option_chain(ticker)`: Retrieves the options chain for a given stock ticker.
+- `last_price_contract(contract_name)`: Gets the last traded price of a specific options contract.
+- `get_risk_free_rate()`: Fetches the current risk-free interest rate.
+- `get_ticker_from_contract(contract_name)`: Extracts the stock ticker from an options contract name.
+- `get_expiry(contract_name)`: Determines the expiration date of an options contract.
+- `get_historical_options_data(ticker, start_date, end_date)`: Gathers historical options data for a given ticker within a specified date range.
+- `get_data(ticker)`: General function to obtain data for a given ticker.
+- `time_to_maturity(contract_name)`: Calculates the time to maturity for an options contract.
+- `strike_price(contract_name)`: Extracts the strike price from an options contract name.
+- `get_underlying_price(contract_name)`: Retrieves the current price of the underlying asset for an options contract.
+- `extract_option_type(contract_name)`: Determines whether an options contract is a call or put.
+- `get_nearest_expiry_and_strike_filtered_options(ticker)`: Fetches options contracts for a ticker with the nearest expiration and filters them based on certain criteria.
+- `get_combined_option_chain(ticker, dividend_yield, option_type, start_date, end_date, risk_free_rate)`: Combines various options data for a comprehensive analysis.
 
-And the third-party libraries include:
-- `numpy`
-- `pandas`
-- `scipy.stats`
-- `yfinance`
-- `yoptions`
-- `sklearn.linear_model`
+### Pricing_Utils.py
+- `black_scholes(S, K, T, r, sigma, option_type)`: Implements the Black-Scholes pricing model for options.
+- `future_black_scholes_price(contract_name, future_price)`: Estimates future Black-Scholes price for an options contract.
+- `black_scholes_vectorized(...)`: Vectorized version of the Black-Scholes formula for batch processing.
+- `monte_carlo_simulation(...)`: Conducts a Monte Carlo simulation for stock price paths.
+- `monte_carlo_option_price(...)`: Estimates the price of an option using Monte Carlo simulations.
+- `mle_gbm(ticker)`: Performs Maximum Likelihood Estimation for Geometric Brownian Motion parameters.
+- `estimate_jump_parameters(ticker)`: Estimates parameters for the Jump Diffusion model.
+- `jump_diffusion_simulation(...)`: Simulates stock price paths using the Merton Jump Diffusion model.
+- `jump_diffusion_option_price(...)`: Calculates option price using Jump Diffusion simulations.
+- `price_my_option(contract_name, model)`: Prices an option using specified pricing models.
 
-## Key Functions
+### Volatility_Utils.py
+- `get_implied_volatility(contract_name)`: Calculates the implied volatility for an options contract.
+- `historical_volatility(ticker)`: Computes historical volatility for a given stock ticker.
+- `sabr_volatility(...)`: Implements the SABR volatility model.
+- `get_historical_volatility_of_contract(contract_name)`: Fetches historical volatility specifically for an options contract.
+- `derived_implied_volatility(...)`: Derives the implied volatility based on market data.
+- `vega(...)`: Calculates the vega of an option.
+- `get_ticker_volatility(ticker)`: Retrieves volatility metrics for a specific stock ticker.
 
-1. Contract Details
+### Sentiment_Utils.py
+- `visualize_net_institutional_trading_5_days()`: Visualizes net institutional trading over the past five days.
+- `visualize_net_institutional_trading_today()`: Displays net institutional trading for the current day.
+- `calculate_net_institutional_trading(...)`: Calculates net institutional trading based on block trades.
+- `weighted_volume_sentiment_analysis(...)`: Analyzes sentiment based on trading volume and price impact.
+- `detect_volume_anomalies(...)`: Identifies significant deviations in trading volume.
+- `highlight_key_info(...)`: Extracts and highlights key information from data.
+- `weighted_reddit_sentiment_analysis(subreddit, ticker)`: Performs sentiment analysis based on Reddit posts and comments.
+- `aggregate_subreddit_sentiment(...)`: Aggregates sentiment scores from multiple subreddits.
+- `alpha_extract_and_calculate_sentiment(...)`: Extracts and calculates sentiment from Alphavantage news feeds.
+- `alpha_get_top_gainers_losers()`: Retrieves top gainers and losers from the stock market.
+- `alpha_get_news_sentiment(...)`: Fetches news sentiment for specified tickers or topics.
 
-- get_expiry(contract): Fetch the expiry date of a given contract.
-- time_to_maturity(contract): Determine the time left for a contract's expiration.
-- strike_price(contract): Extract the strike price from a contract.
-- get_ticker_from_contract(contract): Extract the ticker symbol from a contract.
-- extract_option_type(contract): Identify if a contract is a call or put.
-
-2. Pricing Models
-
-- black_scholes(...): Compute the Black-Scholes option price.
-- monte_carlo_option_price(...): Calculate option price using Monte Carlo simulation.
-- jump_diffusion_option_price(...): Compute option price with the Jump Diffusion model.
-- price_my_option(contract, model_type): Price an option using the specified model.
-
-3. Simulations
-
-- monte_carlo_simulation(...): Perform a Monte Carlo simulation for option pricing.
-- jump_diffusion_simulation(...): Execute a Jump Diffusion simulation for option movements.
-
-4. Estimations and Volatility
-
-- get_underlying_price(contract): Get the current price of the underlying asset of a contract.
-- get_implied_volatility(contract): Extract the implied volatility for a given contract.
-- get_historical_volatility(contract): Fetch the historical volatility for a specified contract.
-- mle_gbm(ticker): Maximum Likelihood Estimation for Geometric Brownian Motion parameters.
-- estimate_jump_parameters(ticker): Estimate the jump parameters for a given ticker.
-
-5. Forecasts and Analysis
-
-- exponential_moving_average(ticker): Calculate the EMA for a ticker.
-- price_rate_of_change(ticker): Compute the price rate of change.
-- moving_average(ticker): Determine the simple moving average.
-- vwap(ticker): Compute the Volume Weighted Average Price.
-- simple_moving_forecast(ticker): Generate a forecast based on simple moving average.
-- relative_strength_index(ticker): Calculate the RSI for a ticker.
-- bollinger_bands(ticker): Fetch the Bollinger Bands for a given ticker.
-- decide_trade(ticker): Provide a trade decision based on multiple indicators.
-- linear_regression_forecast(ticker): Forecast future prices using linear regression.
-- forecast_from_indicator(ticker, indicator_function): Generate forecasts based on a chosen indicator function.
-- combined_forecast(ticker): Create a forecast by combining multiple methods.
-
-6. Contract Analysis
-
-- ideal_contract_price(contract): Calculate the ideal price for a given contract.
-- get_ideal_contract(ticker, strike, expiry): Get the ideal contract details for the given parameters.
-- profitability_range(contract, low, high): Analyze the profitability range for a contract within a price range.
-- under_valued_contracts(ticker): Identify undervalued contracts for a ticker.
-- over_valued_contracts(ticker): Identify overvalued contracts for a ticker.
+### Services.py
+- `over_under_priced_contracts_by_volatility(contract_name)`: Determines if contracts are overpriced or underpriced based on volatility.
+- `derive_implied_volatility_contract(contract_name)`: Derives implied volatility for a specific contract.
+- `max_profit_contract(...)`: Identifies the contract with the maximum potential profit based on future expectations.
+- `avg_contract_price_with_all_models(contract_name)`: Averages the contract price using different pricing models.
+- `profitability_range(...)`: Calculates profitability ranges for contracts within expected price fluctuations.
+- `profitability_heatmap(...)`: Generates a heatmap visualization for contract profitability.
+- `evaluate_contracts(tickers)`: Evaluates contracts for a list of tickers to determine pricing status.
+- `market_mispriced_contracts_finder()`: Identifies mispriced contracts in the market.

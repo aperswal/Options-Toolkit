@@ -140,6 +140,5 @@ def get_combined_option_chain(ticker, dividend_yield, option_type, start_date, e
 
     return combined_option_chain
 
-
 if __name__ == '__main__':    
-    print(time_to_maturity('SPY231127P00450000'))
+    print(yo.get_plain_option_ticker('SPY231124C00457000'))

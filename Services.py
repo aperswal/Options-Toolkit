@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 from Volatility_Utils import get_implied_volatility, historical_volatility, sabr_volatility, get_historical_volatility_of_contract, derived_implied_volatility, vega, get_ticker_volatility
 from Data_Utils import get_option_chain, last_price_contract, get_risk_free_rate, get_ticker_from_contract, get_expiry, get_historical_options_data, get_data, time_to_maturity, strike_price, get_underlying_price, extract_option_type, get_nearest_expiry_and_strike_filtered_options, get_combined_option_chain
 from Pricing_Utils import black_scholes, future_black_scholes_price, black_scholes_vectorized, monte_carlo_simulation, monte_carlo_option_price, mle_gbm, estimate_jump_parameters, jump_diffusion_simulation, jump_diffusion_option_price, price_my_option, ideal_contract_price_black_scholes
+from Sentiment_Utils import visualize_net_institutional_trading_5_days, visualize_net_institutional_trading_today, calculate_net_institutional_trading, weighted_volume_sentiment_analysis, detect_volume_anomalies, highlight_key_info, time_aggregated_block_trades, get_intraday_stock_data, aggregate_subreddit_sentiment, weighted_reddit_sentiment_analysis, alpha_extract_and_calculate_sentiment, alpha_get_top_gainers_losers, alpha_get_news_sentiment
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -25,16 +26,14 @@ import plotly.express as px
 ANNUAL_TRADING_DAYS = 252
 RISK_FREE_TICKER = "^IRX"
 
-    
-def over_under_priced_contracts_by_volatility(contract_name):
-    implied_volatility = get_implied_volatility(contract_name)*100
-    personal_implied_volatility = derive_implied_volatility_contract(contract_name)*100
-    iv_premium = abs(implied_volatility - personal_implied_volatility)
 
-    if iv_premium < (implied_volatility*0.34):
-        return "underpriced"
-    else:
-        return "overpriced"
+def over_under_priced_contracts_by_volatility(contract_name):
+    contract_name_str = str(contract_name)  # Ensure contract_name is a string
+    implied_volatility = get_implied_volatility(contract_name_str) * 100
+    historical_volatility = get_historical_volatility_of_contract(contract_name_str) * 100
+    iv_premium = abs(implied_volatility - historical_volatility)
+
+    return "underpriced" if iv_premium < (implied_volatility * 0.68) else "overpriced"
 
 def derive_implied_volatility_contract(contract_name):
     S = get_underlying_price(contract_name)  # Underlying price
@@ -214,61 +213,30 @@ def profitability_heatmap(contract_name, profitability_range):
     # Show the plot
     fig.show()
 
+def evaluate_contracts(tickers):
+    underpriced = {'Call': [], 'Put': []}
+    overpriced = {'Call': [], 'Put': []}
 
-def choose_0DTE_option_for_large_moves(ticker, option_type='c'):
-    """
-    Choose a 0DTE option that might capture large price movements.
+    for ticker in tickers:
+        filtered_options = get_nearest_expiry_and_strike_filtered_options(ticker)
+        
+        for _, contract_data in filtered_options.iterrows():
+            contract_name = contract_data['Symbol']  # Extract the contract name
+            option_type = extract_option_type(contract_name).lower()  # Extract the option type (c or p)
 
-    :param ticker: Ticker symbol of the underlying asset.
-    :param option_type: Type of the option ('call' or 'put').
-    :return: Option contract details or a message if no suitable option is found.
-    """
-    current_price = get_underlying_price(ticker)
-    option_chain = get_option_chain_for_0DTE(ticker, option_type)
+            pricing_status = over_under_priced_contracts_by_volatility(contract_name)
 
-    # Check if the option_chain is not a DataFrame
-    if not isinstance(option_chain, pd.DataFrame):
-        print("Error: Expected a DataFrame but received:", option_chain)
-        return None
+            if pricing_status == 'underpriced':
+                underpriced['Call' if option_type == 'c' else 'Put'].append(contract_name)
+            elif pricing_status == 'overpriced':
+                overpriced['Call' if option_type == 'c' else 'Put'].append(contract_name)
 
-    # Proceed only if the option chain is not empty
-    if option_chain.empty:
-        print(f"No options available for {ticker} expiring today.")
-        return None
+    return pd.DataFrame({'Underpriced': underpriced, 'Overpriced': overpriced})
 
-    # Filter for high volume options as they might indicate active trading interest
-    volume_threshold = option_chain['Volume'].quantile(0.75)  # top 25% by volume
-    active_options = option_chain[option_chain['Volume'] > volume_threshold]
-
-    # Filter for options with higher implied volatility
-    iv_threshold = active_options['Implied_Volatility'].quantile(0.75)  # top 25% by IV
-    high_iv_options = active_options[active_options['Implied_Volatility'] > iv_threshold]
-
-    # Select options close to ATM
-    high_iv_options['Distance_to_ATM'] = abs(high_iv_options['Strike'] - current_price)
-    atm_threshold = np.percentile(high_iv_options['Distance_to_ATM'], 50)  # median distance
-    atm_options = high_iv_options[high_iv_options['Distance_to_ATM'] <= atm_threshold]
-
-    # Final selection based on a combination of factors
-    if not atm_options.empty:
-        # Selecting the option with the highest combination of volume and IV
-        atm_options['Selection_Score'] = atm_options['Volume'] * atm_options['Implied_Volatility']
-        selected_option = atm_options.loc[atm_options['Selection_Score'].idxmax()]
-        return selected_option
-    else:
-        return "No suitable options found based on criteria."
-
-def get_option_chain_for_0DTE(ticker, option_type):
-    """
-    Get the option chain for the given ticker, considering only contracts expiring today (0DTE).
-    """
-    today = datetime.today().date()
-    formatted_today = today.strftime('%Y-%m-%d')  # Convert to string in 'YYYY-MM-DD' format
-
-    option_chain = get_option_chain(ticker, 0, option_type, formatted_today, None)
-    return option_chain
+def market_mispriced_contracts_finder():
+    tickers = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'NFLX', 'BA']  
+    contract_analysis = evaluate_contracts(tickers)
+    return contract_analysis
 
 if __name__ == '__main__':    
-    print(get_option_chain_for_0DTE('SPY', 'c'))
-    print(choose_0DTE_option_for_large_moves('SPY', 'c'))
-    print(choose_0DTE_option_for_large_moves('SPY', 'p'))
+    print("Hello World")

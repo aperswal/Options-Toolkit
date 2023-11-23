@@ -3,7 +3,6 @@ from alpha_vantage.timeseries import TimeSeries
 import json
 import requests
 from datetime import datetime
-import re
 # Standard Libraries
 import math
 import re
@@ -13,20 +12,12 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
-import yfinance as yf
-import yoptions as yo
-from sklearn.linear_model import LinearRegression
 from scipy.signal import argrelextrema
 import seaborn as sns
-import holidays
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-from Volatility_Utils import get_implied_volatility, historical_volatility, sabr_volatility, get_historical_volatility_of_contract, derived_implied_volatility, vega
-from Data_Utils import get_option_chain, last_price_contract, get_risk_free_rate, get_ticker_from_contract, get_expiry, get_historical_options_data, get_data, time_to_maturity, strike_price, get_underlying_price, extract_option_type
-from Pricing_Utils import black_scholes, future_black_scholes_price, black_scholes_vectorized, monte_carlo_simulation, monte_carlo_option_price, mle_gbm, estimate_jump_parameters, jump_diffusion_simulation, jump_diffusion_option_price, price_my_option, ideal_contract_price_black_scholes
 import praw
 from textblob import TextBlob
-import tweepy
 from collections import deque, defaultdict
 
 def alpha_load_api_key():
@@ -48,7 +39,6 @@ alpha_api_key = alpha_load_api_key()
 reddit_api_key = reddit_load_api_key()
 twitter_api_key = load_twitter_api_keys()
 net_institutional_trading = defaultdict(deque)
-
 
 def alpha_get_news_sentiment(tickers=None, topics=None, time_from=None, time_to=None, sort='LATEST', limit=50):
     api_key = alpha_api_key
@@ -124,16 +114,28 @@ def weighted_reddit_sentiment_analysis(subreddit, ticker):
     total_weight = 0
     six_months_ago = datetime.utcnow().timestamp() - (6 * 30 * 24 * 60 * 60)  # 6 months in seconds
     ticker = ticker.upper()  # Ensuring the ticker is in uppercase for consistency
+    ticker_variations = [ticker.upper(), f"${ticker.upper()}", f"#{ticker.upper()}"]
+    search_query = '|'.join(ticker_variations)  # Creates a regex pattern like 'SPY|$SPY|#SPY'
 
-    for post in subreddit.search(f"title:{ticker}", sort='new', time_filter='year', limit=10):
+    for post in subreddit.search(f"title:({search_query})", sort='new', time_filter='year', limit=10):
         if post.created_utc >= six_months_ago:
             post_age = (datetime.utcnow() - datetime.utcfromtimestamp(post.created_utc)).total_seconds()
-            weight = (post.score + 1) / (post_age + 1) * (len(post.comments) + 1)
-            analysis = TextBlob(post.title)
-            sentiment_score = analysis.sentiment.polarity
+            post_weight = (post.score + 1) / (post_age + 1) * (len(post.comments) + 1)
+            post_analysis = TextBlob(post.title)
+            post_sentiment_score = post_analysis.sentiment.polarity
 
-            total_weighted_sentiment += sentiment_score * weight
-            total_weight += weight
+            total_weighted_sentiment += post_sentiment_score * post_weight
+            total_weight += post_weight
+
+            # Analyze top 10 comments
+            post.comments.replace_more(limit=0)  # Load the comments
+            for comment in post.comments[:10]:  # Take top 10 comments
+                comment_analysis = TextBlob(comment.body)
+                comment_sentiment_score = comment_analysis.sentiment.polarity
+                comment_weight = post_weight * 0.5  # Assuming comment weight is half of post weight
+
+                total_weighted_sentiment += comment_sentiment_score * comment_weight
+                total_weight += comment_weight
 
     average_weighted_sentiment = total_weighted_sentiment / total_weight if total_weight > 0 else 0
     return average_weighted_sentiment
@@ -156,62 +158,6 @@ def aggregate_subreddit_sentiment(subreddits, ticker):
         sentiment_label = "Bullish"
 
     return {"overall_sentiment_score": overall_sentiment, "overall_sentiment_label": sentiment_label}
-
-'''
-def twitter_sentiment_analysis(ticker):
-    client_id, client_secret, app_id, access_token, access_token_secret = load_twitter_api_keys()
-    auth = tweepy.OAuthHandler(client_id, client_secret)
-    auth.set_access_token(access_token, access_token_secret)  # Add your Access Token Secret here
-    api = tweepy.API(auth)
-
-    ticker_variations = f"{ticker} OR ${ticker} OR #{ticker}"
-    tweets = api.search_tweets(q=ticker_variations, count=10, result_type='mixed')
-    total_sentiment = 0
-
-    for tweet in tweets:
-        analysis = TextBlob(tweet.text)
-        total_sentiment += analysis.sentiment.polarity
-
-    average_sentiment = total_sentiment / len(tweets) if tweets else 0
-
-    sentiment_label = "Neutral"
-    if average_sentiment <= -0.35:
-        sentiment_label = "Bearish"
-    elif -0.35 < average_sentiment <= -0.15:
-        sentiment_label = "Somewhat-Bearish"
-    elif 0.15 <= average_sentiment < 0.35:
-        sentiment_label = "Somewhat-Bullish"
-    elif average_sentiment >= 0.35:
-        sentiment_label = "Bullish"
-
-    return {"overall_sentiment_score": average_sentiment, "overall_sentiment_label": sentiment_label}
-
-def aggregate_twitter_sentiment(accounts, ticker):
-    aggregated_sentiment = 0
-    for account in accounts:
-        sentiment_data = twitter_sentiment_analysis(f"from:{account} {ticker}")
-        aggregated_sentiment += sentiment_data['overall_sentiment_score']
-
-    overall_sentiment = aggregated_sentiment / len(accounts) if accounts else 0
-
-    # Labeling the sentiment
-    sentiment_label = "Neutral"
-    if overall_sentiment <= -0.35:
-        sentiment_label = "Bearish"
-    elif -0.35 < overall_sentiment <= -0.15:
-        sentiment_label = "Somewhat-Bearish"
-    elif 0.15 <= overall_sentiment < 0.35:
-        sentiment_label = "Somewhat-Bullish"
-    elif overall_sentiment >= 0.35:
-        sentiment_label = "Bullish"
-
-    return {"overall_sentiment_score": overall_sentiment, "overall_sentiment_label": sentiment_label}
-
-def sentiment_analysis_for_stock_trading_twitter(ticker):
-    accounts = ['@TradingThomas3', '@traders_kings']
-    stock_sentiment = aggregate_twitter_sentiment(accounts, ticker)
-    return stock_sentiment
-'''
 
 def get_intraday_stock_data(symbol):
     ts = TimeSeries(key=alpha_api_key, output_format='pandas')
@@ -258,7 +204,6 @@ def weighted_volume_sentiment_analysis(data):
     else:
         return "Neutral"
 
-
 def calculate_net_institutional_trading(block_trades, date, ticker):
     # Filter the block trades for the given date
     block_trades = block_trades[block_trades.index.date == date]
@@ -293,24 +238,11 @@ def visualize_net_institutional_trading_5_days():
     plt.title('Net Institutional Trading for the Most Recent 5 Days')
     plt.show()
 
-
 symbols = ['SPY', 'MSFT', 'AAPL', 'AMZN', 'NVDA', 'GOOGL', 'META', 'GOOG', 'BRK-B', 'TSLA', 'UNH']
 
 if __name__ == '__main__':
-    for ticker in symbols:
-        intraday_data = get_intraday_stock_data(ticker)
+    subreddits = ['wallstreetbets', 'daytrading', 'options', 'stocks']
+    ticker = 'UPST'
+    print(aggregate_subreddit_sentiment(subreddits, ticker))
 
-        # Ensure the index is a datetime for resampling
-        intraday_data.index = pd.to_datetime(intraday_data.index)
-        
-        # Get the block trades
-        block_trades = time_aggregated_block_trades(intraday_data, '1min')
-        
-        # Calculate the net institutional trading
-        calculate_net_institutional_trading(block_trades, pd.to_datetime('today').date(), ticker)
     
-    # Visualize the net institutional trading for today
-    visualize_net_institutional_trading_today()
-    
-    # Visualize the net institutional trading for the most recent 5 days
-    visualize_net_institutional_trading_5_days()

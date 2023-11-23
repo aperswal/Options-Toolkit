@@ -16,12 +16,26 @@ import holidays
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
-def get_ticker_volatility(contract_name):
-    match = re.match(r'([A-Z]+)', contract_name)
+def get_ticker_from_contract(contract_name):
+    # Extract the ticker symbol from the option contract name
+    match = re.search(r'^([A-Z]+)', contract_name)
     if match:
         return match.group(1)
     else:
         raise ValueError("Couldn't extract ticker from contract name.")
+
+# Update the get_historical_volatility_of_contract function
+def get_historical_volatility_of_contract(contract_name):
+    # Extract ticker symbol from the contract name
+    ticker_symbol = get_ticker_from_contract(contract_name)
+
+    # Check and proceed only if ticker_symbol is valid
+    if isinstance(ticker_symbol, str):
+        annual_volatility = historical_volatility(ticker_symbol, period='1y', interval='1d')
+        return annual_volatility
+    else:
+        print(f"Invalid ticker symbol: {ticker_symbol}")
+        return None
 
 def black_scholes_volatility(S, K, T, r, sigma, option_type='call'):
     """
@@ -98,11 +112,6 @@ def historical_volatility(stock_ticker, period='1y', interval='1d'):
     # Annualize the volatility
     annual_volatility = daily_volatility * np.sqrt(252)
 
-    return annual_volatility
-
-def get_historical_volatility_of_contract(contract_name):
-    ticker = get_ticker_volatility(contract_name)
-    annual_volatility = historical_volatility(ticker, period='1y', interval='1d')  
     return annual_volatility
 
 def vega(S, K, T, r, sigma):

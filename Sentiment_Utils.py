@@ -67,24 +67,35 @@ def alpha_get_top_gainers_losers():
     response = requests.get(url, params=params)
     return response.json()
     
+def calculate_time_weight(time_published, current_time, max_days=30):
+    """Calculate a weight based on the recency of the news item."""
+    try:
+        publication_date = datetime.strptime(time_published, '%Y%m%dT%H%M%S')
+        days_since_publication = (current_time - publication_date).days
+        return max(0, (max_days - days_since_publication) / max_days)
+    except ValueError:
+        return 0  # Return 0 weight if time format is incorrect
+
 def alpha_extract_and_calculate_sentiment(ticker, response_dict):
     total_weighted_score = 0
     total_weight = 0
+    current_time = datetime.utcnow()
 
-    # Access the news items from the 'feed' key of the response dictionary
     news_items = response_dict.get('feed', [])
 
     for item in news_items:
-        ticker_sentiments = item.get("ticker_sentiment", [])
+        time_published = item.get('time_published', '')
+        time_weight = calculate_time_weight(time_published, current_time)
 
+        ticker_sentiments = item.get("ticker_sentiment", [])
         for ticker_sentiment in ticker_sentiments:
             if ticker_sentiment["ticker"] == ticker:
                 sentiment_score = float(ticker_sentiment["ticker_sentiment_score"])
                 relevance_score = float(ticker_sentiment["relevance_score"])
-                weight = relevance_score  # Use relevance score as weight
 
-                total_weighted_score += sentiment_score * weight
-                total_weight += weight
+                combined_weight = relevance_score * time_weight
+                total_weighted_score += sentiment_score * combined_weight
+                total_weight += combined_weight
 
     if total_weight == 0:
         return "No relevant news found for the ticker."
@@ -104,36 +115,54 @@ def alpha_extract_and_calculate_sentiment(ticker, response_dict):
 
     return {"overall_sentiment_score": overall_score, "overall_sentiment_label": sentiment_label}
 
-def weighted_reddit_sentiment_analysis(subreddit, ticker):
+def weighted_reddit_sentiment_analysis(subreddit_name, ticker, time_frame_days=30, post_limit=30, comment_limit=20, min_upvotes=10):
     client_id, client_secret, user_agent = reddit_load_api_key()
     reddit = praw.Reddit(client_id=client_id, client_secret=client_secret, user_agent=user_agent)
 
-    subreddit = reddit.subreddit(subreddit)
+    subreddit = reddit.subreddit(subreddit_name)
+
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=time_frame_days)
 
     total_weighted_sentiment = 0
     total_weight = 0
-    six_months_ago = datetime.utcnow().timestamp() - (6 * 30 * 24 * 60 * 60)  # 6 months in seconds
-    ticker = ticker.upper()  # Ensuring the ticker is in uppercase for consistency
-    ticker_variations = [ticker.upper(), f"${ticker.upper()}", f"#{ticker.upper()}"]
-    search_query = '|'.join(ticker_variations)  # Creates a regex pattern like 'SPY|$SPY|#SPY'
 
-    for post in subreddit.search(f"title:({search_query})", sort='new', time_filter='year', limit=10):
-        if post.created_utc >= six_months_ago:
-            post_age = (datetime.utcnow() - datetime.utcfromtimestamp(post.created_utc)).total_seconds()
-            post_weight = (post.score + 1) / (post_age + 1) * (len(post.comments) + 1)
+    for post in subreddit.search(f"{ticker}", sort='new', time_filter='all', limit=post_limit):
+        post_date = datetime.utcfromtimestamp(post.created_utc)
+        if start_date <= post_date <= end_date and post.score >= min_upvotes:
+            post_comments = len(post.comments)
+            post_age = (end_date - post_date).total_seconds() / 3600  # in hours
+
+            # Attempt to retrieve the user's karma
+            try:
+                post_karma = sum(post.author.karma().values()) if post.author else 0
+            except AttributeError:
+                post_karma = 0
+
+            # Post engagement and user reputation weight
+            post_weight = (post.score * post_comments) / (post_age + 1) * (post_karma + 1)
+
             post_analysis = TextBlob(post.title)
             post_sentiment_score = post_analysis.sentiment.polarity
-
             total_weighted_sentiment += post_sentiment_score * post_weight
             total_weight += post_weight
 
-            # Analyze top 10 comments
-            post.comments.replace_more(limit=0)  # Load the comments
-            for comment in post.comments[:10]:  # Take top 10 comments
+            # Analyze top comments
+            post.comments.replace_more(limit=0)
+            for comment in post.comments[:comment_limit]:
+                comment_age = (end_date - datetime.utcfromtimestamp(comment.created_utc)).total_seconds() / 3600  # in hours
+
+                # Attempt to retrieve the user's karma
+                try:
+                    comment_karma = sum(comment.author.karma().values()) if comment.author else 0
+                except AttributeError:
+                    comment_karma = 0
+
+                # Comment engagement and user reputation weight
+                comment_weight = (comment.score / (comment_age + 1)) * (comment_karma + 1)
+
                 comment_analysis = TextBlob(comment.body)
                 comment_sentiment_score = comment_analysis.sentiment.polarity
-                comment_weight = post_weight * 0.5  # Assuming comment weight is half of post weight
-
                 total_weighted_sentiment += comment_sentiment_score * comment_weight
                 total_weight += comment_weight
 
@@ -242,7 +271,6 @@ symbols = ['SPY', 'MSFT', 'AAPL', 'AMZN', 'NVDA', 'GOOGL', 'META', 'GOOG', 'BRK-
 
 if __name__ == '__main__':
     subreddits = ['wallstreetbets', 'daytrading', 'options', 'stocks']
-    ticker = 'UPST'
-    print(aggregate_subreddit_sentiment(subreddits, ticker))
+    ticker = 'AAPL'
+    print(weighted_reddit_sentiment_analysis('wallstreetbets', ticker))
 
-    

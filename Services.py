@@ -18,7 +18,6 @@ import plotly.graph_objects as go
 from Volatility_Utils import get_implied_volatility, historical_volatility, sabr_volatility, get_historical_volatility_of_contract, derived_implied_volatility, vega, get_ticker_volatility
 from Data_Utils import get_option_chain, last_price_contract, get_risk_free_rate, get_ticker_from_contract, get_expiry, get_historical_options_data, get_data, time_to_maturity, strike_price, get_underlying_price, extract_option_type, get_nearest_expiry_and_strike_filtered_options, get_combined_option_chain
 from Pricing_Utils import black_scholes, future_black_scholes_price, black_scholes_vectorized, monte_carlo_simulation, monte_carlo_option_price, mle_gbm, estimate_jump_parameters, jump_diffusion_simulation, jump_diffusion_option_price, price_my_option, ideal_contract_price_black_scholes
-from Sentiment_Utils import visualize_net_institutional_trading_5_days, visualize_net_institutional_trading_today, calculate_net_institutional_trading, weighted_volume_sentiment_analysis, detect_volume_anomalies, highlight_key_info, time_aggregated_block_trades, get_intraday_stock_data, aggregate_subreddit_sentiment, weighted_reddit_sentiment_analysis, alpha_extract_and_calculate_sentiment, alpha_get_top_gainers_losers, alpha_get_news_sentiment
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -26,6 +25,63 @@ import plotly.express as px
 ANNUAL_TRADING_DAYS = 252
 RISK_FREE_TICKER = "^IRX"
 
+def max_pain(ticker):
+    current_price = get_underlying_price(ticker)
+
+    # Fetch call and put options data
+    call_options = yo.get_plain_chain(ticker, 'c')
+    put_options = yo.get_plain_chain(ticker, 'p')
+
+    # Extract expiration dates from option contract names
+    call_options['Expiration'] = call_options['Symbol'].apply(get_expiry)
+    put_options['Expiration'] = put_options['Symbol'].apply(get_expiry)
+
+    # Assuming the DataFrame has 'Strike' and 'Open Interest' columns
+    strike_prices = pd.concat([call_options['Strike'], put_options['Strike']]).unique()
+    max_pain_strike = 0
+    max_pain_value = 0
+    total_money_lost = 0
+
+    # Calculate the pain for each strike price
+    for strike in strike_prices:
+        call_pain = sum((strike - current_price) * call_options[call_options['Strike'] == strike]['Open Interest'].fillna(0))
+        put_pain = sum((current_price - strike) * put_options[put_options['Strike'] == strike]['Open Interest'].fillna(0))
+        total_pain = call_pain + put_pain
+
+        if total_pain > max_pain_value:
+            max_pain_value = total_pain
+            max_pain_strike = strike
+            total_money_lost = total_pain
+
+    expiration_date = call_options['Expiration'].iloc[0]
+
+    result = {
+        "ticker": ticker,
+        "max_pain_strike": max_pain_strike,
+        "max_pain_value": max_pain_value,
+        "total_money_lost": total_money_lost,
+        "expiration_date": expiration_date,
+        "current_price": current_price
+    }
+    return result
+
+def visualize_max_pain(max_pain_info, call_options, put_options):
+    ticker = max_pain_info['ticker']
+    max_pain_strike = max_pain_info['max_pain_strike']
+    current_price = max_pain_info['current_price']
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(call_options['Strike'], call_options['Open Interest'], label='Calls Open Interest', color='green')
+    plt.plot(put_options['Strike'], put_options['Open Interest'], label='Puts Open Interest', color='red')
+    plt.axvline(x=max_pain_strike, label='Max Pain Strike', color='blue', linestyle='--')
+    plt.axvline(x=current_price, label='Current Price', color='black', linestyle=':')
+
+    plt.title(f"Options Open Interest for {ticker} (Max Pain at {max_pain_strike})")
+    plt.xlabel("Strike Price")
+    plt.ylabel("Open Interest")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 def over_under_priced_contracts_by_volatility(contract_name):
     contract_name_str = str(contract_name)  # Ensure contract_name is a string
@@ -239,4 +295,8 @@ def market_mispriced_contracts_finder():
     return contract_analysis
 
 if __name__ == '__main__':    
-    print("Hello World")
+    max_pain_info = max_pain("AAPL")
+    print(max_pain_info)
+    call_options = yo.get_plain_chain("AAPL", 'c')
+    put_options = yo.get_plain_chain("AAPL", 'p')
+    visualize_max_pain(max_pain_info, call_options, put_options)

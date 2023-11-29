@@ -25,27 +25,18 @@ def calculate_sma(symbol, interval='daily', time_period=20, series_type='close')
     ti = TechIndicators(key=alpha_api_key, output_format='pandas')
     data, meta_data = ti.get_sma(symbol=symbol, interval=interval, time_period=time_period, series_type=series_type)
     data = data.tail(5)  # Get data for the past week
-    data.plot()
-    plt.title('Simple Moving Average (SMA)')
-    plt.show()
     return data
 
 def calculate_ema(symbol, interval='daily', time_period=20, series_type='close'):
     ti = TechIndicators(key=alpha_api_key, output_format='pandas')
     data, meta_data = ti.get_ema(symbol=symbol, interval=interval, time_period=time_period, series_type=series_type)
     data = data.tail(5)  # Get data for the past week
-    data.plot()
-    plt.title('Exponential Moving Average (EMA)')
-    plt.show()
     return data
 
 def calculate_rsi(symbol, interval='daily', time_period=14, series_type='close'):
     ti = TechIndicators(key=alpha_api_key, output_format='pandas')
     data, meta_data = ti.get_rsi(symbol=symbol, interval=interval, time_period=time_period, series_type=series_type)
     data = data.tail(5)  # Get data for the past week
-    data.plot()
-    plt.title('Relative Strength Index (RSI)')
-    plt.show()
     return data
 
 def calculate_golden_cross(symbol, short_window=50, long_window=200):

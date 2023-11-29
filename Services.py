@@ -23,38 +23,56 @@ import plotly.express as px
 from Technical_Analysis_Utils import calculate_sma, calculate_rsi, calculate_ema, analyze_volume_trends, detect_potential_reversal, get_stock_data_intraday, get_stock_data_daily
 from Sentiment_Utils import weighted_reddit_sentiment_analysis, time_aggregated_block_trades, calculate_net_institutional_trading, get_intraday_stock_data
 from collections import defaultdict, deque
+import datetime
 
 # Constants
 ANNUAL_TRADING_DAYS = 252
 RISK_FREE_TICKER = "^IRX"
 
-def max_pain(ticker):
-    current_price = get_underlying_price(ticker)
+def get_next_trading_day():
+    nyse = holidays.US()
+    next_trading_day = (datetime.datetime.now() + datetime.timedelta(days=1)).date()
+    while next_trading_day in nyse or next_trading_day.weekday() >= 5:
+        next_trading_day += datetime.timedelta(days=1)
+    return next_trading_day
 
-    # Fetch call and put options data
-    call_options = yo.get_plain_chain(ticker, 'c')
-    put_options = yo.get_plain_chain(ticker, 'p')
+def max_pain_for_next_day(ticker):
+    current_price = get_current_ticker_price(ticker)
+
+    if ticker == 'SPY':
+        next_trading_day = get_next_trading_day()
+        # Fetch options data for the next trading day for SPY
+        call_options = get_option_chain(ticker, 0, 'c', next_trading_day.strftime('%Y-%m-%d'))
+        put_options = get_option_chain(ticker, 0, 'p', next_trading_day.strftime('%Y-%m-%d'))
+    else:
+        # Fetch options data for the current day for other tickers
+        call_options = yo.get_plain_chain(ticker, 'c')
+        put_options = yo.get_plain_chain(ticker, 'p')
 
     # Extract expiration dates from option contract names
     call_options['Expiration'] = call_options['Symbol'].apply(get_expiry)
     put_options['Expiration'] = put_options['Symbol'].apply(get_expiry)
+    
+    # Filter for ITM options
+    itm_calls = call_options[call_options['Strike'] < current_price]
+    itm_puts = put_options[put_options['Strike'] > current_price]
 
-    # Assuming the DataFrame has 'Strike' and 'Open Interest' columns
-    strike_prices = pd.concat([call_options['Strike'], put_options['Strike']]).unique()
+    # Combine ITM call and put options
+    combined_itm_options = pd.concat([itm_calls, itm_puts])
+
+    # Max Pain calculation
+    strike_prices = combined_itm_options['Strike'].unique()
     max_pain_strike = 0
-    max_pain_value = 0
-    total_money_lost = 0
+    max_pain_value = float('inf')
 
-    # Calculate the pain for each strike price
     for strike in strike_prices:
-        call_pain = sum((strike - current_price) * call_options[call_options['Strike'] == strike]['Open Interest'].fillna(0))
-        put_pain = sum((current_price - strike) * put_options[put_options['Strike'] == strike]['Open Interest'].fillna(0))
+        call_pain = sum((strike - current_price) * itm_calls[itm_calls['Strike'] == strike]['Open Interest'].fillna(0))
+        put_pain = sum((current_price - strike) * itm_puts[itm_puts['Strike'] == strike]['Open Interest'].fillna(0))
         total_pain = call_pain + put_pain
 
-        if total_pain > max_pain_value:
+        if total_pain < max_pain_value:
             max_pain_value = total_pain
             max_pain_strike = strike
-            total_money_lost = total_pain
 
     expiration_date = call_options['Expiration'].iloc[0]
 
@@ -62,9 +80,8 @@ def max_pain(ticker):
         "ticker": ticker,
         "max_pain_strike": max_pain_strike,
         "max_pain_value": max_pain_value,
-        "total_money_lost": total_money_lost,
-        "expiration_date": expiration_date,
-        "current_price": current_price
+        "current_price": current_price,
+        "expiration_date": expiration_date
     }
     return result
 
@@ -321,7 +338,7 @@ def predict_market_direction(ticker, time_frame='daily', time_period=20):
         interval = 'daily'  # For daily data, the interval is always 'daily'
 
     # Max pain analysis
-    max_pain_info = max_pain(ticker)
+    max_pain_info = max_pain_for_next_day(ticker)
     max_pain_strike = max_pain_info['max_pain_strike']
     current_price = get_current_ticker_price(ticker)
 
@@ -402,7 +419,7 @@ def comprehensive_stock_analysis_with_prediction(ticker, prediction_timeframe=30
     print("Reddit sentiment analysis complete.")
 
     print("Performing max pain analysis...")
-    max_pain_info = max_pain(ticker)
+    max_pain_info = max_pain_for_next_day(ticker)
     print("Max pain analysis complete.")
 
     print("Analyzing net institutional trading...")

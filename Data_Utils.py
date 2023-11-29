@@ -134,4 +134,4 @@ def get_combined_option_chain(ticker, dividend_yield, option_type, start_date, e
     return combined_option_chain
 
 if __name__ == '__main__':    
-    print(yo.get_plain_option_ticker('SPY231124C00457000'))
+    print(yo.get_chain_greeks_date('AAPL', 0.0, 'c', '2023-12-01', 0.0525))

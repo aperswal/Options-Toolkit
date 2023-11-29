@@ -16,10 +16,13 @@ import holidays
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from Volatility_Utils import get_implied_volatility, historical_volatility, sabr_volatility, get_historical_volatility_of_contract, derived_implied_volatility, vega, get_ticker_volatility
-from Data_Utils import get_option_chain, last_price_contract, get_risk_free_rate, get_ticker_from_contract, get_expiry, get_historical_options_data, get_data, time_to_maturity, strike_price, get_underlying_price, extract_option_type, get_nearest_expiry_and_strike_filtered_options, get_combined_option_chain
+from Data_Utils import get_option_chain, last_price_contract, get_risk_free_rate, get_ticker_from_contract, get_expiry, get_historical_options_data, get_data, time_to_maturity, strike_price, get_underlying_price, extract_option_type, get_nearest_expiry_and_strike_filtered_options, get_combined_option_chain, get_current_ticker_price
 from Pricing_Utils import black_scholes, future_black_scholes_price, black_scholes_vectorized, monte_carlo_simulation, monte_carlo_option_price, mle_gbm, estimate_jump_parameters, jump_diffusion_simulation, jump_diffusion_option_price, price_my_option, ideal_contract_price_black_scholes
 import plotly.graph_objects as go
 import plotly.express as px
+from Technical_Analysis_Utils import calculate_sma, calculate_rsi, calculate_ema, analyze_volume_trends, detect_potential_reversal, get_stock_data_intraday, get_stock_data_daily
+from Sentiment_Utils import weighted_reddit_sentiment_analysis, time_aggregated_block_trades, calculate_net_institutional_trading, get_intraday_stock_data
+from collections import defaultdict, deque
 
 # Constants
 ANNUAL_TRADING_DAYS = 252
@@ -294,9 +297,146 @@ def market_mispriced_contracts_finder():
     contract_analysis = evaluate_contracts(tickers)
     return contract_analysis
 
-if __name__ == '__main__':    
-    max_pain_info = max_pain("AAPL")
-    print(max_pain_info)
-    call_options = yo.get_plain_chain("AAPL", 'c')
-    put_options = yo.get_plain_chain("AAPL", 'p')
-    visualize_max_pain(max_pain_info, call_options, put_options)
+def predict_market_direction(ticker, time_frame='daily', time_period=20):
+    """
+    Predict the market direction based on technical analysis for a given ticker.
+    Chooses between intraday and daily data based on the time_frame.
+
+    Parameters:
+    ticker (str): The stock ticker symbol.
+    time_frame (str): Time frame for the analysis ('1min', '5min', '15min', '30min', '60min', 'daily').
+    time_period (int): Time period to consider for moving averages and RSI.
+    """
+    # Define valid intraday intervals
+    valid_intraday_intervals = ['1min', '5min', '15min', '30min', '60min']
+    
+    # Check if the time_frame is for intraday or daily data
+    if time_frame in valid_intraday_intervals:
+        # Use intraday data
+        stock_data = get_stock_data_intraday(ticker, time_frame)
+        interval = time_frame  # Interval is the same as time_frame for intraday data
+    else:
+        # Use daily data
+        stock_data = get_stock_data_daily(ticker)
+        interval = 'daily'  # For daily data, the interval is always 'daily'
+
+    # Max pain analysis
+    max_pain_info = max_pain(ticker)
+    max_pain_strike = max_pain_info['max_pain_strike']
+    current_price = get_current_ticker_price(ticker)
+
+    # Fetch the last value from the SMA, EMA, and RSI data series
+    sma_last_value = calculate_sma(ticker, interval=interval, time_period=time_period)['SMA'].iloc[-1]
+    ema_last_value = calculate_ema(ticker, interval=interval, time_period=time_period)['EMA'].iloc[-1]
+    rsi_last_value = calculate_rsi(ticker, interval=interval, time_period=time_period)['RSI'].iloc[-1]
+
+    bullish_signals = 0
+    bearish_signals = 0
+
+    # Comparing current price with SMA and EMA
+    if current_price > sma_last_value:
+        bullish_signals += 1
+    else:
+        bearish_signals += 1
+
+    if current_price > ema_last_value:
+        bullish_signals += 1.5
+    else:
+        bearish_signals += 1.5
+
+    # RSI analysis
+    if rsi_last_value > 70:
+        bearish_signals += 0.5
+    elif rsi_last_value < 30:
+        bullish_signals += 0.5
+
+    # Max pain analysis
+    if max_pain_strike > current_price:
+        bullish_signals += 2
+    elif max_pain_strike < current_price:
+        bearish_signals += 2
+
+    # Volume trend analysis
+    volume_trend_analysis = analyze_volume_trends(stock_data)
+    if "upward trend" in volume_trend_analysis:
+        bullish_signals += 2
+    elif "downward trend" in volume_trend_analysis:
+        bearish_signals += 2
+
+    # Potential reversal analysis
+    reversal_data = detect_potential_reversal(stock_data)
+    if reversal_data['potential_reversal'].iloc[-1]:
+        # A potential reversal can indicate either bullish or bearish, depending on the current trend
+        if bullish_signals > bearish_signals:
+            bearish_signals += 1  # Adds weight to bearish if currently bullish
+        else:
+            bullish_signals += 1  # Adds weight to bullish if currently bearish
+
+    # Determining the market direction based on the signals
+    if bullish_signals > bearish_signals:
+        market_direction = "Bullish"
+    elif bearish_signals > bullish_signals:
+        market_direction = "Bearish"
+    else:
+        market_direction = "Neutral"
+
+    return market_direction
+
+def comprehensive_stock_analysis_with_prediction(ticker, prediction_timeframe=30):
+    print(f"Starting analysis for {ticker}...")
+    net_institutional_trading = defaultdict(deque)
+
+    print("Performing technical analysis...")
+    technical_analysis_data = {}
+    for interval in ['1min', '5min']:
+        sma_data = calculate_sma(ticker, interval, 20, 'close')
+        ema_data = calculate_ema(ticker, interval, 20, 'close')
+        rsi_data = calculate_rsi(ticker, interval, 14, 'close')
+        technical_analysis_data[interval] = {'SMA': sma_data, 'EMA': ema_data, 'RSI': rsi_data}
+        print(f"Technical analysis for {interval} interval complete.")
+
+    print("Performing Reddit sentiment analysis...")
+    subreddits = ['wallstreetbets', 'stocks', 'investing']
+    sentiment_scores = [weighted_reddit_sentiment_analysis(subreddit, ticker) for subreddit in subreddits]
+    average_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+    print("Reddit sentiment analysis complete.")
+
+    print("Performing max pain analysis...")
+    max_pain_info = max_pain(ticker)
+    print("Max pain analysis complete.")
+
+    print("Analyzing net institutional trading...")
+    stock_data = get_intraday_stock_data(ticker)
+    block_trades = time_aggregated_block_trades(stock_data, '5min', 10000)
+    current_date = datetime.now().date()
+    calculate_net_institutional_trading(block_trades, current_date, ticker, net_institutional_trading)
+    net_institutional_trading_value = net_institutional_trading[ticker][-1] if ticker in net_institutional_trading else (current_date, 0)
+    print("Net institutional trading analysis complete.")
+
+    market_direction = predict_market_direction(ticker, '5min', 10)
+
+    current_price = get_current_ticker_price(ticker)
+    predicted_price_change = current_price * 0.01 * (1 if market_direction == "Bullish" else -1)
+    predicted_price_change += predicted_price_change * average_sentiment
+    predicted_price = current_price + predicted_price_change
+    probability = np.clip(50 + (average_sentiment * 10) + (10 if market_direction == "Bullish" else -10), 0, 100)
+
+    print("Assembling the report...")
+    report = {
+        'ticker': ticker,
+        'technical_analysis': technical_analysis_data,
+        'reddit_sentiment': average_sentiment,
+        'max_pain': max_pain_info,
+        'net_institutional_trading': net_institutional_trading_value,
+        'prediction': {
+            'predicted_price': predicted_price,
+            'probability': probability,
+            'timeframe_minutes': prediction_timeframe
+        }
+    }
+
+    print("Analysis complete.")
+    return report
+
+if __name__ == '__main__':
+    print(comprehensive_stock_analysis_with_prediction('AAPL'))

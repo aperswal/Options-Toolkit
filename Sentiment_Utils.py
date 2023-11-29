@@ -1,21 +1,11 @@
-import Services as ou
 from alpha_vantage.timeseries import TimeSeries
 import json
 import requests
 from datetime import datetime
 # Standard Libraries
-import math
-import re
 from datetime import datetime, timedelta
 
-# Third-party Libraries
-import numpy as np
-import pandas as pd
-from scipy.stats import norm
-from scipy.signal import argrelextrema
-import seaborn as sns
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
 import praw
 from textblob import TextBlob
 from collections import deque, defaultdict
@@ -233,19 +223,37 @@ def weighted_volume_sentiment_analysis(data):
     else:
         return "Neutral"
 
-def calculate_net_institutional_trading(block_trades, date, ticker):
+def calculate_net_institutional_trading(block_trades, date, ticker, net_institutional_trading):
+    """
+    Calculates and stores the net institutional trading for a given ticker on a specific date.
+
+    Parameters:
+    block_trades (DataFrame): DataFrame containing block trade data.
+    date (datetime): The date for which to calculate net institutional trading.
+    ticker (str): Ticker symbol of the stock.
+    net_institutional_trading (dict): Dictionary to store the net institutional trading values.
+
+    Returns:
+    float: Net institutional trading value for the given date.
+    """
     # Filter the block trades for the given date
-    block_trades = block_trades[block_trades.index.date == date]
-    
+    filtered_trades = block_trades[block_trades.index.date == date]
+
     # Calculate the total bought and sold for each day
-    block_trades['Net'] = block_trades['Close'] - block_trades['Open']
-    block_trades['Institutional Trading'] = block_trades['Net'] * block_trades['Volume']
-    
-    # Calculate the net institutional trading for each day
-    net = block_trades['Institutional Trading'].sum()
-    
-    # Add the net institutional trading for the day to the dictionary
-    net_institutional_trading[ticker].append((date, net))
+    filtered_trades['Net'] = filtered_trades['Close'] - filtered_trades['Open']
+    filtered_trades['Institutional Trading'] = filtered_trades['Net'] * filtered_trades['Volume']
+
+    # Calculate the net institutional trading for the day
+    net_value = filtered_trades['Institutional Trading'].sum()
+
+    # Store the net value in the dictionary
+    if ticker in net_institutional_trading:
+        net_institutional_trading[ticker].append((date, net_value))
+    else:
+        net_institutional_trading[ticker] = [(date, net_value)]
+
+    return net_value
+
 
 def visualize_net_institutional_trading_today():
     # Create a bar graph of the net institutional trading for each ticker for today

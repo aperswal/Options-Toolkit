@@ -1,22 +1,15 @@
-# Standard Libraries
-import math
-import re
-from datetime import datetime, timedelta
 
-# Third-party Libraries
-import numpy as np
+import re
+from datetime import datetime
 import pandas as pd
 from scipy.stats import norm
 import yfinance as yf
 import yoptions as yo
-from sklearn.linear_model import LinearRegression
-from scipy.signal import argrelextrema
-import seaborn as sns
-import holidays
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-from pandas.tseries.holiday import USFederalHolidayCalendar
-from pandas.tseries.offsets import CustomBusinessDay
+
+def get_current_ticker_price(ticker):
+    ticker = yf.Ticker(ticker)
+    todays_data = ticker.history(period='1d')
+    return todays_data['Close'][0]
 
 def get_option_chain(ticker, dividend_yield, option_type, expiration_date, risk_free_rate=None):
     option_data = yo.get_chain_greeks_date(
@@ -37,7 +30,7 @@ def get_risk_free_rate():
     hist = tbill.history(period="1d")
     rate = hist['Close'].iloc[0]
     return rate
-
+    
 def get_ticker_from_contract(contract_name):
     match = re.match(r'([A-Z]+)', contract_name)
     if match:

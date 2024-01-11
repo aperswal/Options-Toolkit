@@ -1,10 +1,8 @@
 from alpha_vantage.timeseries import TimeSeries
 import json
 import requests
-from datetime import datetime
 # Standard Libraries
-from datetime import datetime, timedelta
-
+from datetime import timedelta, datetime
 import matplotlib.pyplot as plt
 import praw
 from textblob import TextBlob
@@ -194,7 +192,11 @@ def time_aggregated_block_trades(data, time_window='1min', block_size=10000):
     block_trades = aggregated_data[aggregated_data['Volume'] >= block_size]
     block_trades['Price Impact'] = block_trades['Close'] - block_trades['Open']
     
-    return block_trades
+    # Sorting by Volume and getting the top 10 largest trades
+    top_block_trades = block_trades.nlargest(10, 'Volume')
+    
+    return top_block_trades
+
 
 def detect_volume_anomalies(data, std_factor=3):
     # Using standard deviation to find significant deviations in volume
@@ -203,7 +205,12 @@ def detect_volume_anomalies(data, std_factor=3):
     threshold = avg_volume + std_factor * std_volume
 
     volume_anomalies = data[(data['Volume'] > threshold) | (data['Volume'] < avg_volume - std_factor * std_volume)]
-    return volume_anomalies
+    
+    # Sorting by Volume and getting the top 10 largest anomalies
+    top_anomalies = volume_anomalies.nlargest(10, 'Volume')
+    
+    return top_anomalies
+
 
 def highlight_key_info(data):
     # Extracting and returning key details
@@ -278,7 +285,9 @@ def visualize_net_institutional_trading_5_days():
 symbols = ['SPY', 'MSFT', 'AAPL', 'AMZN', 'NVDA', 'GOOGL', 'META', 'GOOG', 'BRK-B', 'TSLA', 'UNH']
 
 if __name__ == '__main__':
-    subreddits = ['wallstreetbets', 'daytrading', 'options', 'stocks']
+    subreddits = ['wallstreetbets', 'stocks']
     ticker = 'AAPL'
-    print(weighted_reddit_sentiment_analysis('wallstreetbets', ticker))
-
+    #print(alpha_extract_and_calculate_sentiment(ticker, alpha_get_news_sentiment(ticker)))
+    #print(aggregate_subreddit_sentiment(subreddits, ticker))
+    print(type(time_aggregated_block_trades(get_intraday_stock_data(ticker))))
+    print(type(detect_volume_anomalies(get_intraday_stock_data(ticker))))

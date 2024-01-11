@@ -297,4 +297,4 @@ def price_my_option(contract_name, model):
         raise ValueError(f"Unknown model: {model}")
     
 if __name__ == '__main__':    
-    print("Hello World")
+    print(get_risk_free_rate())

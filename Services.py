@@ -1,7 +1,7 @@
 # Standard Libraries
 import math
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta, datetime
 
 # Third-party Libraries
 import numpy as np
@@ -23,56 +23,39 @@ import plotly.express as px
 from Technical_Analysis_Utils import calculate_sma, calculate_rsi, calculate_ema, analyze_volume_trends, detect_potential_reversal, get_stock_data_intraday, get_stock_data_daily
 from Sentiment_Utils import weighted_reddit_sentiment_analysis, time_aggregated_block_trades, calculate_net_institutional_trading, get_intraday_stock_data
 from collections import defaultdict, deque
-import datetime
+
 
 # Constants
 ANNUAL_TRADING_DAYS = 252
 RISK_FREE_TICKER = "^IRX"
 
-def get_next_trading_day():
-    nyse = holidays.US()
-    next_trading_day = (datetime.datetime.now() + datetime.timedelta(days=1)).date()
-    while next_trading_day in nyse or next_trading_day.weekday() >= 5:
-        next_trading_day += datetime.timedelta(days=1)
-    return next_trading_day
-
 def max_pain_for_next_day(ticker):
-    current_price = get_current_ticker_price(ticker)
+    current_price = get_underlying_price(ticker)
 
-    if ticker == 'SPY':
-        next_trading_day = get_next_trading_day()
-        # Fetch options data for the next trading day for SPY
-        call_options = get_option_chain(ticker, 0, 'c', next_trading_day.strftime('%Y-%m-%d'))
-        put_options = get_option_chain(ticker, 0, 'p', next_trading_day.strftime('%Y-%m-%d'))
-    else:
-        # Fetch options data for the current day for other tickers
-        call_options = yo.get_plain_chain(ticker, 'c')
-        put_options = yo.get_plain_chain(ticker, 'p')
+    # Fetch call and put options data
+    call_options = yo.get_plain_chain(ticker, 'c')
+    put_options = yo.get_plain_chain(ticker, 'p')
 
     # Extract expiration dates from option contract names
     call_options['Expiration'] = call_options['Symbol'].apply(get_expiry)
     put_options['Expiration'] = put_options['Symbol'].apply(get_expiry)
-    
-    # Filter for ITM options
-    itm_calls = call_options[call_options['Strike'] < current_price]
-    itm_puts = put_options[put_options['Strike'] > current_price]
 
-    # Combine ITM call and put options
-    combined_itm_options = pd.concat([itm_calls, itm_puts])
-
-    # Max Pain calculation
-    strike_prices = combined_itm_options['Strike'].unique()
+    # Assuming the DataFrame has 'Strike' and 'Open Interest' columns
+    strike_prices = pd.concat([call_options['Strike'], put_options['Strike']]).unique()
     max_pain_strike = 0
-    max_pain_value = float('inf')
+    max_pain_value = 0
+    total_money_lost = 0
 
+    # Calculate the pain for each strike price
     for strike in strike_prices:
-        call_pain = sum((strike - current_price) * itm_calls[itm_calls['Strike'] == strike]['Open Interest'].fillna(0))
-        put_pain = sum((current_price - strike) * itm_puts[itm_puts['Strike'] == strike]['Open Interest'].fillna(0))
+        call_pain = sum((strike - current_price) * call_options[call_options['Strike'] == strike]['Open Interest'].fillna(0))
+        put_pain = sum((current_price - strike) * put_options[put_options['Strike'] == strike]['Open Interest'].fillna(0))
         total_pain = call_pain + put_pain
 
-        if total_pain < max_pain_value:
+        if total_pain > max_pain_value:
             max_pain_value = total_pain
             max_pain_strike = strike
+            total_money_lost = total_pain
 
     expiration_date = call_options['Expiration'].iloc[0]
 
@@ -80,8 +63,9 @@ def max_pain_for_next_day(ticker):
         "ticker": ticker,
         "max_pain_strike": max_pain_strike,
         "max_pain_value": max_pain_value,
-        "current_price": current_price,
-        "expiration_date": expiration_date
+        "total_money_lost": total_money_lost,
+        "expiration_date": expiration_date,
+        "current_price": current_price
     }
     return result
 
@@ -122,7 +106,7 @@ def derive_implied_volatility_contract(contract_name):
     
     return implied_volatility
 
-def max_profit_contract(ticker, expected_price, expected_date, days_after_target=3, dividend_yield=0, risk_free_rate=None):
+def max_profit_contract(ticker, expected_price, expected_date, days_after_target=7, dividend_yield=0, risk_free_rate=None):
     # Get current and expected prices
     current_price = get_underlying_price(ticker)
     # Determine the option type
@@ -160,7 +144,6 @@ def max_profit_contract(ticker, expected_price, expected_date, days_after_target
     ideal_contract = combined_option_chain.loc[combined_option_chain['Potential_Profit_Percentage'].idxmax()]
 
     print("Ideal contract:")
-    print(ideal_contract)
 
     return ideal_contract
 
@@ -288,6 +271,62 @@ def profitability_heatmap(contract_name, profitability_range):
 
     # Show the plot
     fig.show()
+
+def contract_price_changes_over_time_and_underlying_price(contract_name, expected_low_price, expected_high_price):
+    S = get_underlying_price(contract_name)  # Current price of the underlying asset
+    K = strike_price(contract_name)  # Strike price
+    T = time_to_maturity(contract_name) / 365  # Time to maturity in years
+    r = get_risk_free_rate() / 100  # Risk-free rate
+    sigma = get_implied_volatility(contract_name)  # Implied volatility
+    option_type = 'call' if extract_option_type(contract_name) == 'C' else 'put'  # Option type
+
+    current_bs_price = black_scholes(S, K, T, r, sigma, option_type)
+    actual_last_price = last_price_contract(contract_name)
+
+    start_date = datetime.today().date()
+    expiry_date = datetime.strptime(get_expiry(contract_name), '%Y-%m-%d').date()
+    date_range = pd.bdate_range(start=start_date, end=expiry_date, freq='C', holidays=holidays.US())
+
+    mid_price = np.round(S * 2) / 2
+    low_price = mid_price - (expected_high_price - expected_low_price) / 2
+    high_price = mid_price + (expected_high_price - expected_low_price) / 2
+
+    percentage_changes = {}
+    for price in np.arange(low_price, high_price + 0.5, 0.5):
+        percentage_changes[price] = []
+        for date in date_range:
+            if isinstance(date, pd.Timestamp):
+                date = date.to_pydatetime().date()
+            T = (expiry_date - date).days / 365
+            bs_price = black_scholes(price, K, T, r, sigma, option_type)
+            percentage_change = (bs_price - actual_last_price) / actual_last_price * 100
+            normalized_change = round((percentage_change - 100) / 100, 2)
+            percentage_changes[price].append(1 + normalized_change)
+
+    # Convert to DataFrame
+    percentage_changes_df = pd.DataFrame(percentage_changes, index=date_range)
+
+    return percentage_changes_df
+
+
+def calculate_contract_price_at_target(contract_name, target_price):
+    S = get_underlying_price(contract_name)  # Current price of the underlying asset
+    K = strike_price(contract_name)  # Strike price
+    T = time_to_maturity(contract_name) / 365  # Time to maturity in years
+    r = get_risk_free_rate() / 100  # Risk-free rate
+    sigma = get_implied_volatility(contract_name)  # Implied volatility
+    option_type = 'call' if extract_option_type(contract_name) == 'C' else 'put'  # Option type
+
+    current_bs_price = black_scholes(S, K, T, r, sigma, option_type)
+    actual_last_price = last_price_contract(contract_name)
+
+    percentage_change = (target_price - actual_last_price) / actual_last_price * 100
+    normalized_change = round((percentage_change - 100) / 100, 2)
+
+    bs_price_at_target = current_bs_price * (1 + normalized_change)
+
+    return bs_price_at_target
+
 
 def evaluate_contracts(tickers):
     underpriced = {'Call': [], 'Put': []}
@@ -456,4 +495,4 @@ def comprehensive_stock_analysis_with_prediction(ticker, prediction_timeframe=30
     return report
 
 if __name__ == '__main__':
-    print(comprehensive_stock_analysis_with_prediction('AAPL'))
+    print(contract_price_changes_over_time_and_underlying_price('AAPL240119C00187500', 178, 192))
